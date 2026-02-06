@@ -1,0 +1,6 @@
+oauth_token.json
+*.db
+*.log
+config.json
+*.sqlite
+__pycache__/

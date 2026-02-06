@@ -1,0 +1,28 @@
+{
+    "use_email": true,
+    "use_telegram": false,
+    "telegram_max_per_run": 25,
+    "telegram_token": "xxxx",
+    "telegram_chat_id": "xxxx",
+    "ebay_sites": ["EBAY_GB", "EBAY_US", "EBAY_DE", "EBAY_AU", "EBAY_FR"],
+    "exclude_terms": [""],
+    "script_file_path" : "/home/xxxx/fastbaysearch/",
+    "ebay_urls_dbfile": "ebay_search_urls.db",
+    "ebay_oauth_file" : "oauth_token.json",
+    "ebay_search_keywords": {
+        "base_terms": ["",""],
+        "required_terms": [""]
+    },
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": "587",
+    "smtp_starttls_encryption": "yes",
+    "smtp_authentication": "yes",
+    "smtp_login": "xxx@gmail.com",
+    "smtp_password": "xxxx",
+    "email_sender": "xxxx@gmail.com",
+    "email_receiver": "xxxx@gmail.com",
+    "email_subject": "New eBay search results",
+    "email_person_name": "Postman Pat",
+    "log_to_console": false
+
+}

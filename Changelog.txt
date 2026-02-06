@@ -1,0 +1,10 @@
+Changelog
+
+Initial version 6.2.2026 15:59
++ Enhanced binary search (2/3 fewer searches).
++ Added Telegram support, one item at a time with images.
++ Added extensive error handling.
++ Added exclude_terms
++ Added history table to the DB + log
++ Added currency conversion through Frankfurter API
+- Removed variants search as redundant; required terms can be used.
