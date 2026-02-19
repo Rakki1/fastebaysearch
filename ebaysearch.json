@@ -4,6 +4,8 @@
     "telegram_max_per_run": 25,
     "telegram_token": "xxxx",
     "telegram_chat_id": "xxxx",
+	"telegram_send_mode": "auto",
+	"telegram_disable_web_preview": false,
     "ebay_sites": ["EBAY_GB", "EBAY_US", "EBAY_DE", "EBAY_AU", "EBAY_FR"],
     "exclude_terms": [""],
     "script_file_path" : "/home/xxxx/fastbaysearch/",

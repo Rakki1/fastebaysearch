@@ -1,13 +1,13 @@
-#!/usr/bin/python3 -tt
-# fastebaysearch 6.2.2026 15:59
-# + Enhanced binary search (2/3 fewer searches).
-# + Added Telegram support, one item at a time with images.
-# + Added extensive error handling.
-# + Added exclude_terms
-# + Added history table to the DB + log
-# + Added currency conversion through Frankfurter API
-# - Removed variants search as redundant; required terms can be used.
-# Note! Set environment variables via crontab.
+#!/usr/bin/env python3
+# fastebaysearch 19.2.2026 19:42
+# - Image send to Telegram added: telegram_send_mode auto, text, photo, photo_only
+# - Added telegram switches telegram_send_mode and telegram_disable_web_preview
+# - Added all queries logging when INFO is active.
+# - Added warning if 100 characters limit is exceeded.
+# - Fixed exclude terms bug.
+# - Fixed separated search words bug. 
+# - Fixed some variable names.
+# - Fixed multiple async runs to single run.
 # Forked and mostly rewritten from the original ebaysearch v0.4.0 by Kalevi Kolttonen <kalevi@kolttonen.fi>
 # (c) 2025-2026 Rakki <rakki@iki.fi>
 # License: GPLv2
@@ -49,7 +49,6 @@ logger.propagate = False  # Prevents duplicate logs in the root logger
 
 if logger.handlers:
     logger.handlers.clear()
-
 
 file_handler = logging.FileHandler(LOG_FILE, mode='a')
 file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
@@ -106,7 +105,7 @@ def format_date(date_str):
     except Exception as e:
         logger.debug(f"format_date parse failed: {date_str!r}: {e}")
         return "Not available"
-        
+
 async def get_exchange_rates():
     """Hakee uusimmat valuuttakurssit Frankfurter API:sta suhteessa euroon."""
     url = "https://api.frankfurter.app/latest?base=EUR&symbols=USD,GBP,AUD"
@@ -116,10 +115,10 @@ async def get_exchange_rates():
                 if resp.status == 200:
                     data = await resp.json()
                     rates = data.get("rates", {})
-                    logger.info(f"Valuuttakurssit päivitetty: {rates}")
+                    logger.info(f"Currencies updated: {rates}")
                     return rates
                 else:
-                    logger.warning(f"Frankfurter API virhe {resp.status}. Käytetään alkuperäisiä valuuttoja.")
+                    logger.warning(f"Frankfurter API error {resp.status}. Using original currencies.")
     except Exception as e:
         logger.error(f"Valuuttakurssien haku epäonnistui: {e}")
     return {}
@@ -149,8 +148,7 @@ def create_database_if_not_exists(db_path):
                     );
                     CREATE INDEX idx_item_id ON ebayids (item_id);
                 """)
-                logger.info(f"✅ Database {db_path} created.")
-            # history (v0.5.2 style)
+                logger.info(f"Database {db_path} created.")
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='history';")
             if not cur.fetchone():
                 cur.executescript("""
@@ -161,7 +159,7 @@ def create_database_if_not_exists(db_path):
                         end_time TEXT
                     );
                 """)
-                logger.info(f"✅ Table history created in {db_path}")
+                logger.info(f"Table history created in {db_path}")
 
             # Seed history with run_number=0 row if empty (like v0.5.2)
             cur.execute("SELECT COUNT(*) FROM history;")
@@ -170,11 +168,11 @@ def create_database_if_not_exists(db_path):
                 cur.execute(
                     "INSERT INTO history (id, run_number, start_time, end_time) VALUES (0, 0, NULL, NULL);"
                 )
-                logger.info("✅ Seeded history with run_number=0")
+                logger.info("Seeded history with run_number=0")
 
             conn.commit()
     except sqlite3.Error as e:
-        logger.error(f"❌ Database error: {e}")
+        logger.error(f"*** Database error: {e}")
         sys.exit(1)
 
 def db_history_new_run(db_path):
@@ -199,7 +197,7 @@ def db_history_new_run(db_path):
             conn.commit()
             return new_run
     except sqlite3.Error as e:
-        logger.error(f"❌ SQLite history new run error: {e}")
+        logger.error(f"*** SQLite history new run error: {e}")
         return None
 
 def db_history_set_timestamp(db_path, run_number, timestamp_type):
@@ -222,7 +220,7 @@ def db_history_set_timestamp(db_path, run_number, timestamp_type):
             )
             conn.commit()
     except sqlite3.Error as e:
-        logger.error(f"❌ SQLite history timestamp error: {e}")
+        logger.error(f"*** SQLite history timestamp error: {e}")
 
 def db_search_for_urls(db_path, item_ids, chunk_size=900):
     if not item_ids:
@@ -240,7 +238,7 @@ def db_search_for_urls(db_path, item_ids, chunk_size=900):
                 found.update(row[0] for row in cur.fetchall())
         return found
     except sqlite3.Error as e:
-        logger.error(f"❌ SQLite search error: {e}")
+        logger.error(f"*** SQLite search error: {e}")
         return set()
 
 def db_insert_urls(db_path, item_ids):
@@ -254,39 +252,45 @@ def db_insert_urls(db_path, item_ids):
             cur = conn.cursor()
             cur.executemany("INSERT OR IGNORE INTO ebayids (item_id, insert_time) VALUES (?, ?)", data)
             conn.commit()
-            logger.info(f"✅ Added {cur.rowcount} new items to the database.")
+            logger.info(f"Added {cur.rowcount} new items to the database.")
     except sqlite3.Error as e:
-        logger.error(f"❌ SQLite insertion error: {e}")
+        logger.error(f"*** SQLite insertion error: {e}")
 
 # ------------------------------
 # CORE LOGIC
 # ------------------------------
-def parse_search_results(keywords, raw_items, rates):
+def parse_search_results(base_name, raw_items, rates):
     results = []
     for item in raw_items:
         raw_id = item.get("itemId") or item.get("legacyItemId")
         item_id = clean_ebay_id(raw_id)
+        if not item_id:
+            continue
+
         price_data = item.get("price", {})
         val_str = price_data.get("value", "0.0")
         curr = price_data.get("currency", "EUR").upper()
-        
+
         try:
             val = float(val_str)
         except ValueError:
             val = 0.0
 
-        # Valuuttamuunnos Frankfurterin kertoimilla
         if curr == "EUR":
             display_price = f"{val:.2f} EUR"
         elif curr in rates:
             eur_val = val / rates[curr]
             display_price = f"{eur_val:.2f} EUR ({val:.2f} {curr})"
         else:
-            # Jos kurssia ei löydy, näytetään alkuperäinen
             display_price = f"{val:.2f} {curr}"
 
+        image_url = ""
+        img = item.get("image") or {}
+        if isinstance(img, dict):
+            image_url = safe_url(img.get("imageUrl", ""))
+
         results.append({
-            "Keywords": str(keywords),
+            "Keywords": str(base_name),
             "Name": item.get("title", "Unknown"),
             "Ebay-site": item.get("listingMarketplaceId", "Unknown"),
             "Price": display_price,
@@ -295,10 +299,9 @@ def parse_search_results(keywords, raw_items, rates):
             "Seller": item.get("seller", {}).get("username", "Unknown"),
             "Starts": format_date(item.get("itemCreationDate")),
             "Ends": format_date(item.get("itemEndDate")),
+            "Image": image_url,
         })
     return results
-
-
 
 async def search_ebay(session, token, site, full_query, limit=200):
     all_results = []
@@ -313,17 +316,17 @@ async def search_ebay(session, token, site, full_query, limit=200):
 
     while True:
         params = {"q": full_query, "limit": str(limit), "offset": str(offset)}
-        async with session.get("https://api.ebay.com/buy/browse/v1/item_summary/search",
-                               headers=headers,
-                               params=params,
-                               timeout=timeout_settings
-                               ) as response:
+        async with session.get(
+            "https://api.ebay.com/buy/browse/v1/item_summary/search",
+            headers=headers,
+            params=params,
+            timeout=timeout_settings
+        ) as response:
 
             if response.status == 429:
                 ra = response.headers.get("Retry-After")
                 logger.warning(f"429 rate limit ({site}), Retry-After={ra}")
                 raise RateLimitError(f"429 rate limit ({site})")
-
 
             if response.status != 200:
                 err_text = await response.text()
@@ -358,11 +361,9 @@ async def run_all_searches(config, token, rates):
         logger.info(f"Launching {len(tasks)} parallel API searches...")
 
         try:
-            # return_exceptions=False -> RateLimitError --> immediately break of the first error.
             results_raw = await asyncio.gather(*(t[1] for t in tasks))
-
         except RateLimitError as e:
-            logger.critical(f"⛔ RATE LIMIT hit! Terminating execution. Reason: {e}")
+            logger.critical(f"*** ERROR *** RATE LIMIT hit! Terminating execution. Reason: {e}")
             raise
         except Exception as e:
             logger.error(f"Unexpected error in parallel execution: {e}")
@@ -417,7 +418,6 @@ def get_ebay_access_token():
 
     return d["access_token"]
 
-
 def safe_url(url: str) -> str:
     """Allow only http/https-links. Others -> empty."""
     if not url:
@@ -428,10 +428,8 @@ def safe_url(url: str) -> str:
         return u
     return ""
 
-
 def send_email(results, config):
     """Sends an email using the configuration and the email template."""
-
     try:
         smtp_server = config["smtp_server"]
         smtp_port = int(config.get("smtp_port", 587))
@@ -442,10 +440,9 @@ def send_email(results, config):
         email_subject = config["email_subject"]
         email_person_name = config["email_person_name"]
     except KeyError as e:
-        logger.error(f"⚠️ Email configuration missing: {e}")
+        logger.error(f"WARNING: Email configuration missing: {e}")
         return
 
-    # HTML escape
     def esc(v):
         return html.escape("" if v is None else str(v))
 
@@ -455,8 +452,7 @@ def send_email(results, config):
     sorted_results = sorted(results, key=lambda r: (r.get("Name") or "").lower())
 
     count = len(results)
-    base_subject = config.get("email_subject", "eBay Search Results")
-    dynamic_subject = f"[{count} NEW] {base_subject}"
+    dynamic_subject = f"[{count} NEW] {email_subject}"
 
     results_html = f"""
     <html>
@@ -529,16 +525,17 @@ def send_email(results, config):
             server.send_message(msg)
             logger.info(f"📧 Email sent: {dynamic_subject}")
     except smtplib.SMTPAuthenticationError:
-        logger.error("❌ SMTP authentication failed – check username and password.")
+        logger.error("*** SMTP authentication failed – check username and password.")
     except smtplib.SMTPException as e:
-        logger.error(f"❌ SMTP error: {e}")
-
+        logger.error(f"*** SMTP error: {e}")
 
 async def send_telegram(results, config):
-    """Send each item separately to Telegram with proper timeout and error handling."""
+    """Send each item separately to Telegram. Uses photo when available."""
     token = config.get("telegram_token")
     chat_id = config.get("telegram_chat_id")
     max_per_run = int(config.get("telegram_max_per_run", 1000))
+    send_mode = (config.get("telegram_send_mode") or "auto").lower().strip()
+    disable_preview = bool(config.get("telegram_disable_web_preview", False))
 
     total = len(results)
     if total > max_per_run:
@@ -546,30 +543,32 @@ async def send_telegram(results, config):
         results = results[:max_per_run]
 
     if not token or not chat_id:
-        logger.error("❌ Telegram configuration missing!")
+        logger.error("*** Telegram configuration missing!")
         return
 
     logger.info(f"Sending {len(results)} items to Telegram individually...")
 
     timeout_settings = aiohttp.ClientTimeout(total=30)
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    base_url = f"https://api.telegram.org/bot{token}"
 
     async with aiohttp.ClientSession(timeout=timeout_settings) as session:
         for r in results:
-            # Raw values
             raw_name = r.get("Name", "Unknown")
             raw_price = r.get("Price", "N/A")
             raw_link = r.get("Link", "")
             raw_keywords = r.get("Keywords", "Unknown")
+            raw_image = r.get("Image", "")
 
-            # Safety
             name = html.escape(str(raw_name))
             price = html.escape(str(raw_price))
-            link = safe_url(raw_link)
-            link_esc = html.escape(link, quote=True)
             keyword_esc = html.escape(str(raw_keywords))
 
-            text = (
+            link = safe_url(str(raw_link))
+            link_esc = html.escape(link, quote=True)
+
+            image_url = safe_url(str(raw_image)) if raw_image else ""
+
+            caption = (
                 "<b>🕹 New find!</b>\n"
                 f"📦 {name}\n"
                 f"💰 {price}\n"
@@ -577,38 +576,79 @@ async def send_telegram(results, config):
                 f'🔗 <a href="{link_esc}">Link to item</a>'
             )
 
-            payload = {
-                "chat_id": chat_id,
-                "text": text,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": False
-            }
+            # Päätetään lähetystapa vivun mukaan
+            want_photo = bool(image_url) and send_mode in ("auto", "photo", "photo_only")
+            force_text = send_mode == "text"
 
+            if force_text:
+                payload = {
+                    "chat_id": chat_id,
+                    "text": caption,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": disable_preview
+                }
+                url = f"{base_url}/sendMessage"
+
+            elif want_photo:
+                payload = {
+                    "chat_id": chat_id,
+                    "photo": image_url,
+                    "caption": caption,
+                    "parse_mode": "HTML",
+                }
+                url = f"{base_url}/sendPhoto"
+
+            else:
+                if send_mode == "photo_only":
+                    logger.info(f"Skipping (photo_only, no image): {raw_name}")
+                    continue
+
+                payload = {
+                    "chat_id": chat_id,
+                    "text": caption,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": disable_preview
+                }
+                url = f"{base_url}/sendMessage"
             try:
                 async with session.post(url, json=payload) as resp:
                     data = await resp.json(content_type=None)
 
                     if resp.status != 200 or not data.get("ok", False):
-                        logger.error(
-                            f"❌ Telegram error for {raw_name}: "
-                            f"HTTP {resp.status} - {data}"
-                        )
+                        logger.error(f"*** Telegram error for {raw_name}: HTTP {resp.status} - {data}")
+
+                        if url.endswith("/sendPhoto") and send_mode != "photo_only":
+                            logger.info(f"Retrying as text message: {raw_name}")
+
+                            payload2 = {
+                                "chat_id": chat_id,
+                                "text": caption,
+                                "parse_mode": "HTML",
+                                "disable_web_page_preview": disable_preview
+                            }
+
+                            async with session.post(f"{base_url}/sendMessage", json=payload2) as resp2:
+                                data2 = await resp2.json(content_type=None)
+
+                                if resp2.status != 200 or not data2.get("ok", False):
+                                    logger.error(
+                                        f"*** Telegram text fallback failed for {raw_name}: "
+                                        f"HTTP {resp2.status} - {data2}"
+                                    )
 
             except asyncio.TimeoutError:
                 logger.error(f"⏱ Telegram timeout for {raw_name}")
             except aiohttp.ClientError as e:
-                logger.error(f"❌ Telegram network error for {raw_name}: {e}")
+                logger.error(f"*** Telegram network error for {raw_name}: {e}")
             except Exception as e:
-                logger.error(f"❌ Telegram unexpected error for {raw_name}: {e}")
+                logger.error(f"*** Telegram unexpected error for {raw_name}: {e}")
 
             # Flood protection (Telegram ~30 msg/s max)
             await asyncio.sleep(0.2)
 
     logger.info("✅ All Telegram notifications sent.")
 
-
 async def send_telegram_header(count, config):
-    """Add a header to the Telegram channel before sending actual links and thumbnails."""
     token = config.get("telegram_token")
     chat_id = config.get("telegram_chat_id")
     if not token or not chat_id:
@@ -617,9 +657,49 @@ async def send_telegram_header(count, config):
     now = datetime.now().strftime("%d.%m. at %H:%M")
     text = f"<b>🔎 SEARCH COMPLETE ({now})</b>\nFound <b>{count}</b> new items!"
 
-    async with aiohttp.ClientSession() as session:
-        payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
-        await session.post(f"https://api.telegram.org/bot{token}/sendMessage", json=payload)
+    timeout_settings = aiohttp.ClientTimeout(total=30)
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+
+    async with aiohttp.ClientSession(timeout=timeout_settings) as session:
+        try:
+            payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+
+            async with session.post(url, json=payload) as resp:
+                data = await resp.json(content_type=None)
+
+                if resp.status != 200 or not data.get("ok", False):
+                    logger.error(f"*** Telegram header error: HTTP {resp.status} - {data}")
+                else:
+                    logger.info("📢 Telegram header sent successfully.")
+
+        except asyncio.TimeoutError:
+            logger.error("⏱ Telegram header timeout.")
+        except aiohttp.ClientError as e:
+            logger.error(f"*** Telegram header network error: {e}")
+        except Exception as e:
+            logger.error(f"*** Telegram header unexpected error: {e}")
+
+# ------------------------------
+# SINGLE asyncio.run() WORKFLOW
+# ------------------------------
+async def async_workflow(config, token, db_path):
+    """
+    Runs all async parts (rates + ebay searches + telegram) in ONE event loop.
+    Returns (all_found_items, unique_items, new_results).
+    """
+    rates = await get_exchange_rates()
+    all_found_items = await run_all_searches(config, token, rates)
+
+    unique_items = list({it['itemId']: it for it in all_found_items}.values())
+    item_ids = [it['itemId'] for it in unique_items]
+    existing_ids = db_search_for_urls(db_path, item_ids)
+    new_results = [it for it in unique_items if it['itemId'] not in existing_ids]
+
+    if new_results and config.get("use_telegram"):
+        await send_telegram_header(len(new_results), config)
+        await send_telegram(new_results, config)
+
+    return all_found_items, unique_items, new_results
 
 # ------------------------------
 # MAIN
@@ -638,39 +718,49 @@ def main():
     with open(sys.argv[1], 'r') as f:
         config = json.load(f)
 
-    kw_cfg = config.get("ebay_search_keywords", {})
+    ebay_search_config = config.get("ebay_search_keywords", {})
     queries = []
 
-    req_list = normalize_terms(kw_cfg.get("required_terms", []))
-    required_clause = f"({', '.join(req_list)})" if req_list else ""
+    req_list = normalize_terms(ebay_search_config.get("required_terms", []))
+    # Note: Use comma in order to use OR. Removing comma changes the query parameters to AND.
+    # 19.2.2026: Separated words supported
+    any_of_terms = "(" + ", ".join(f'"{t}"' for t in req_list) + ")" if req_list else ""
 
     exclude_list = normalize_terms(config.get("exclude_terms", []))
 
     logger.info("Generating comprehensive search...")
 
-    for base in normalize_terms(kw_cfg.get("base_terms", [])):
-            full_query = f"{required_clause} {base}".strip()
+    for base in normalize_terms(ebay_search_config.get("base_terms", [])):
+        full_query = f"{any_of_terms} {base}".strip()
 
-            # Avoid over 100 characters exclude (eBay API limitation)
-            for exc in exclude_list:
-                if len(f"{full_query} {exc}") <= MAX_Q_LEN:
-                    full_query = f"{full_query} {exc}"
-                else:
-                    break
+        # Avoid over 100 characters exclude (eBay API limitation)
+        # 19.2.2026: Added minus before {exc} in order to apply exclude terms.
+        for exc in exclude_list:
+            candidate = f'{full_query} -"{exc}"'
+            if len(candidate) <= MAX_Q_LEN:
+                full_query = candidate
+            else:
+                break
 
-            queries.append({
-                "keywords": full_query,
-                "base_name": base
-            })
+        queries.append({
+            "keywords": full_query,
+            "base_name": base
+        })
 
+    # Asetetaan muodostetut kyselyt konfiguraatioon
     config["ebay_search_keywords"] = queries
     logger.info(f"Generated {len(queries)} optimized searches.")
+    
     if queries:
-        logger.info(f"Example: {queries[0]['keywords']}")
+        logger.info("Full list of generated queries:")
+        for idx, q in enumerate(queries, start=1):
+            q_len = len(q['keywords'])
+            # Visualisoidaan pituus ja varoitetaan jos ollaan rajalla
+            status = " [OK]" if q_len < 100 else " [MAX!]"
+            logger.info(f"  {idx}. ({q_len}/100 chars){status} Base: {q['base_name']} -> {q['keywords']}")
     else:
         logger.error("No searches generated (base_terms empty?)")
         sys.exit(1)
-
 
     # Secure the absolute DB path
     db_name = config.get("ebay_urls_dbfile", "ebay_items.db")
@@ -686,32 +776,20 @@ def main():
     db_history_set_timestamp(db_path, run_number, "start_time")
     logger.info(f"🧾 History start_time set for run_number={run_number}")
 
-
     token = get_ebay_access_token()
+    
+    all_found_items, unique_items, new_results = [], [], []
 
     try:
         try:
-            rates = asyncio.run(get_exchange_rates())
-            all_found_items = asyncio.run(run_all_searches(config, token, rates))
+            all_found_items, unique_items, new_results = asyncio.run(async_workflow(config, token, db_path))
         except RateLimitError as e:
-            logger.critical(f"⛔ RATE LIMIT – exit(2): {e}")
-            # stamp end_time before exiting
-            logger.info(f"🧾 History end_time set for run_number={run_number}")
+            logger.critical(f"*** ERROR *** RATE LIMIT – exit(2): {e}")
             sys.exit(2)
-
-        unique_items = list({it['itemId']: it for it in all_found_items}.values())
 
         logger.info(f"All items found (raw): {len(all_found_items)}")
         logger.info(f"Unique item IDs: {len(unique_items)}")
         logger.info(f"DB absolute path: {os.path.abspath(db_path)}")
-
-        item_ids = [it['itemId'] for it in unique_items]
-        existing_ids = db_search_for_urls(db_path, item_ids)
-
-        logger.info(f"IDs queried from DB: {len(item_ids)}")
-        logger.info(f"Existing in DB: {len(existing_ids)}")
-
-        new_results = [it for it in unique_items if it['itemId'] not in existing_ids]
         logger.info(f"New results found: {len(new_results)}")
 
         if new_results:
@@ -719,12 +797,6 @@ def main():
 
             if config.get("use_email", True):
                 send_email(new_results, config)
-
-            if config.get("use_telegram"):
-                async def notify_telegram():
-                    await send_telegram_header(len(new_results), config)
-                    await send_telegram(new_results, config)
-                asyncio.run(notify_telegram())
         else:
             logger.info("No new items found.")
 

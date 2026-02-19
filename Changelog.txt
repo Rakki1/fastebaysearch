@@ -1,4 +1,23 @@
-Changelog
+Changelog 18.2.2025
+
+Korjattavaa
+- Sähköpostiin tulee Australian eBayn linkki?, vaikka on löytynyt esimerkiksi Saksan eBaysta. 
+- q hakuun mahtuu vain 100 merkkiä, toteuta hakujen pilkonta mikäli mahdollista. 
+
+19.2.2026 23:47
++ Added Telegram text / photos parameters to the JSON configuration file. 
++ Changed header for Python venv
+
+Mahdolliset arvot telegram_send_mode:
+
+"auto" = lähetä kuva+caption jos Image-URL löytyy, muuten teksti (nykyinen käytös)
+"text" = aina sendMessage (ei koskaan sendPhoto)
+"photo" = yritä aina sendPhoto jos image löytyy, muuten fallback tekstiin
+"photo_only" = lähetä vain jos image löytyy, muuten skip (ei fallbackia)
+
+crontab -e
+2,32 * * * * cd /home/client_2420_1/fastebaysearch && venv/bin/python fastebaysearch.py ebaysearch.json >> cron_output.log 2>&1
+
 
 Initial version 6.2.2026 15:59
 + Enhanced binary search (2/3 fewer searches).
