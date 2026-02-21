@@ -1,3 +1,7 @@
+fastebaysearch 21.2.2026 23:05
+- Timezone bug fixed. 
+- Changed variable name unique_items to unique_item_ids. 
+
 fastebaysearch 21.2.2026 22:44
 - Added title, url, site, seller and price columns to the database.
 - Fixed exclude bug (double minus).

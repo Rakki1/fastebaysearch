@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# fastebaysearch 21.2.2026 22:44
+# fastebaysearch 21.2.2026 23:05
 # Forked and mostly rewritten from the original ebaysearch v0.4.0 by Kalevi Kolttonen <kalevi@kolttonen.fi>
 # (c) 2025-2026 Rakki <rakki@iki.fi>
 # License: GPLv2
@@ -38,6 +38,7 @@ TOKEN_FILE = "oauth_token.json"
 logger = logging.getLogger("fastebaysearch")
 logger.setLevel(logging.DEBUG)
 logger.propagate = False  # Prevents duplicate logs in the root logger
+logging.Formatter.converter = time.gmtime
 
 if logger.handlers:
     logger.handlers.clear()
@@ -704,21 +705,21 @@ async def send_telegram_header(count, config):
 async def async_workflow(config, token, db_path):
     """
     Runs all async parts (rates + ebay queries + telegram) in ONE event loop.
-    Returns (all_found_items, unique_items, new_results).
+    Returns (all_found_items, unique_item_ids, new_results).
     """
     rates = await get_exchange_rates()
     all_found_items = await run_all_queries(config, token, rates)
 
-    unique_items = list({it['itemId']: it for it in all_found_items}.values())
-    item_ids = [it['itemId'] for it in unique_items]
+    unique_item_ids = list({it['itemId']: it for it in all_found_items}.values())
+    item_ids = [it['itemId'] for it in unique_item_ids]
     existing_ids = db_search_for_urls(db_path, item_ids)
-    new_results = [it for it in unique_items if it['itemId'] not in existing_ids]
+    new_results = [it for it in unique_item_ids if it['itemId'] not in existing_ids]
 
     if new_results and config.get("use_telegram"):
         await send_telegram_header(len(new_results), config)
         await send_telegram(new_results, config)
 
-    return all_found_items, unique_items, new_results
+    return all_found_items, unique_item_ids, new_results
 
 # ------------------------------
 # MAIN
@@ -797,17 +798,17 @@ def main():
 
     token = get_ebay_access_token()
     
-    all_found_items, unique_items, new_results = [], [], []
+    all_found_items, unique_item_ids, new_results = [], [], []
 
     try:
         try:
-            all_found_items, unique_items, new_results = asyncio.run(async_workflow(config, token, db_path))
+            all_found_items, unique_item_ids, new_results = asyncio.run(async_workflow(config, token, db_path))
         except RateLimitError as e:
             logger.critical(f"Rate limit hit; exiting with code 2: {e}")
             sys.exit(2)
 
         logger.info(f"Total raw results: {len(all_found_items)}")
-        logger.info(f"Unique item IDs: {len(unique_items)}")
+        logger.info(f"Unique item IDs: {len(unique_item_ids)}")
         logger.info(f"New items found: {len(new_results)}")
 
         if new_results:
@@ -818,7 +819,7 @@ def main():
 
         logger.info(
             f"Completed. Items searched: {len(all_found_items)} | "
-            f"Unique item IDs: {len(unique_items)} | "
+            f"Unique item IDs: {len(unique_item_ids)} | "
             f"New items: {len(new_results)} | "
             f"Duration: {time.time()-start_time:.2f}s"
         )
