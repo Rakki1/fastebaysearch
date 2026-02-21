@@ -1,18 +1,27 @@
+fastebaysearch 21.2.2026 22:44
+- Added title, url, site, seller and price columns to the database.
+- Fixed exclude bug (double minus).
+- Minor improvement to db path handling. 
+- Other minor fixes and improvements.
+
 fastebaysearch 19.2.2026 19:42
-+ Image send to Telegram added: telegram_send_mode auto, text, photo, photo_only
-+ Added telegram switches telegram_send_mode and telegram_disable_web_preview
-+ Added all queries logging when INFO is active.
-+ Added warning if 100 characters limit is exceeded.
+- Image send to Telegram added: telegram_send_mode auto, text, photo, photo_only
+- Added telegram switches telegram_send_mode and telegram_disable_web_preview
+- Added all queries logging when INFO is active.
+- Added warning if 100 characters limit is exceeded.
 - Fixed exclude terms bug.
 - Fixed separated search words bug. 
 - Fixed some variable names.
 - Fixed multiple async runs to single run.
 
-Initial version 6.2.2026 15:59
-+ Enhanced binary search (2/3 fewer searches).
-+ Added Telegram support, one item at a time with images.
-+ Added extensive error handling.
-+ Added exclude_terms
-+ Added history table to the DB + log
-+ Added currency conversion through Frankfurter API
+fastebaysearch 6.2.2026 15:59
+- Enhanced binary search (2/3 fewer searches).
+- Added Telegram support, one item at a time with images.
+- Added extensive error handling.
+- Added exclude_terms
+- Added history table to the DB + log
+- Added currency conversion through Frankfurter API
 - Removed variants search as redundant; required terms can be used.
+
+fastebaysearch 13.2.2025 23:05
+- Initial version
