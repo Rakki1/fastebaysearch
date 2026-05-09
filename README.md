@@ -4,6 +4,11 @@
 
 Notifications can be sent by email and/or Telegram. Exchange rates are cached in SQLite so they do not need to be fetched on every run.
 
+`fastebaysearch` is based on the original **ebaysearch** script version 0.4.0 by Kalevi Kolttonen. The original project provided a configurable Python tool for automated eBay searching, SQLite-based tracking of seen items, and email notifications. `fastebaysearch` continues that idea with a refactored codebase, significantly faster asynchronous searches, eBay Browse API support, Telegram notifications, improved SQLite handling, notification retry state, exchange-rate caching, stronger configuration validation and an expanded test suite.
+
+Original project:
+https://kolttonen.fi/computers_and_logic/programming/ebaysearch/ebaysearch.html
+
 ## Requirements
 
 - Python 3.11 or newer
