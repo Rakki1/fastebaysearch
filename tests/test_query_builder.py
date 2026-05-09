@@ -4,7 +4,6 @@ from fastebaysearch_app.query_builder import build_queries
 
 def make_config():
     return AppConfig(
-        config_path=None,
         script_dir=None,
         db_path=None,
         token_file=None,
@@ -19,7 +18,6 @@ def make_config():
         telegram=None,
         log_to_console=False,
         timezone="UTC",
-        raw={},
     )
 
 

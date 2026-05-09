@@ -41,24 +41,6 @@ def test_claim_new_results_deduplicates_batch(tmp_path):
     assert count == 2
 
 
-def test_pending_notifications_are_marked_per_channel(tmp_path):
-    db = Database(tmp_path / "items.db")
-    db.ensure_schema()
-    db.claim_new_results([result()])
-
-    assert [item.item_id for item in db.pending_notifications(require_email=True, require_telegram=True)] == ["12345"]
-
-    db.mark_email_succeeded([result()])
-    assert [item.item_id for item in db.pending_notifications(require_email=True, require_telegram=False)] == []
-    assert [item.item_id for item in db.pending_notifications(require_email=False, require_telegram=True)] == ["12345"]
-
-    db.mark_telegram_failed([result()], "failed")
-    assert [item.item_id for item in db.pending_notifications(require_email=False, require_telegram=True)] == ["12345"]
-
-    db.mark_telegram_succeeded([result()])
-    assert db.pending_notifications(require_email=True, require_telegram=True) == []
-
-
 def test_pending_channel_notifications_respect_limit(tmp_path):
     db = Database(tmp_path / "items.db")
     db.ensure_schema()
@@ -66,14 +48,6 @@ def test_pending_channel_notifications_respect_limit(tmp_path):
 
     assert [item.item_id for item in db.pending_email_notifications(limit=1)] == ["1"]
     assert [item.item_id for item in db.pending_telegram_notifications(limit=1)] == ["1"]
-
-
-def test_pending_notifications_uses_default_limit(tmp_path):
-    db = Database(tmp_path / "items.db")
-    db.ensure_schema()
-    db.claim_new_results([result(str(index)) for index in range(1002)])
-
-    assert len(db.pending_notifications(require_email=True, require_telegram=False)) == 1000
 
 
 def test_exchange_rates_are_cached_in_database(tmp_path):

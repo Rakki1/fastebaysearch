@@ -45,7 +45,6 @@ class TelegramConfig:
 
 @dataclass(frozen=True)
 class AppConfig:
-    config_path: Path
     script_dir: Path
     db_path: Path
     token_file: Path
@@ -60,7 +59,6 @@ class AppConfig:
     telegram: TelegramConfig | None
     log_to_console: bool
     timezone: str
-    raw: dict[str, Any]
     api_concurrency: int = 8
     exchange_rate_cache_ttl_hours: int = 24
     ebay_daily_api_limit: int = 10000
@@ -175,7 +173,6 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
         )
 
     return AppConfig(
-        config_path=config_path,
         script_dir=script_dir,
         db_path=resolve_under_script_dir(script_dir, raw.get("ebay_urls_dbfile"), "ebay_items.db", "Database path"),
         token_file=resolve_under_script_dir(script_dir, raw.get("ebay_oauth_file"), "oauth_token.json", "Token cache path"),
@@ -190,7 +187,6 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
         telegram=telegram,
         log_to_console=as_bool(raw.get("log_to_console"), True),
         timezone=str(raw.get("timezone") or "UTC"),
-        raw=raw,
         api_concurrency=parse_int(raw.get("api_concurrency"), "api_concurrency", 8, minimum=1),
         exchange_rate_cache_ttl_hours=parse_int(
             raw.get("exchange_rate_cache_ttl_hours"),

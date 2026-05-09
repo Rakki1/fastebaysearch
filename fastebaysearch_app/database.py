@@ -9,7 +9,6 @@ from pathlib import Path
 from .models import SearchResult
 from .utils import utc_now_str
 
-DEFAULT_PENDING_LIMIT = 1000
 SQLITE_VARIABLE_LIMIT = 900
 
 
@@ -114,7 +113,6 @@ class Database:
         if not results:
             return []
 
-        inserted: list[SearchResult] = []
         insert_time = utc_now_str()
         unique_results: list[SearchResult] = []
         seen_item_ids: set[str] = set()
@@ -161,29 +159,6 @@ class Database:
 
         self.logger.info(f"Added {len(inserted)} new items to the database.")
         return inserted
-
-    def pending_notifications(
-        self,
-        require_email: bool,
-        require_telegram: bool,
-        limit: int | None = DEFAULT_PENDING_LIMIT,
-    ) -> list[SearchResult]:
-        if not require_email and not require_telegram:
-            return []
-        if require_email and not require_telegram:
-            return self.pending_email_notifications(limit)
-        if require_telegram and not require_email:
-            return self.pending_telegram_notifications(limit)
-
-        seen: set[str] = set()
-        combined: list[SearchResult] = []
-        for result in self.pending_email_notifications(limit) + self.pending_telegram_notifications(limit):
-            if result.item_id not in seen:
-                seen.add(result.item_id)
-                combined.append(result)
-            if limit is not None and len(combined) >= limit:
-                break
-        return combined
 
     def pending_email_notifications(self, limit: int | None = None) -> list[SearchResult]:
         return self._pending_channel_notifications("email_notified_at", limit)

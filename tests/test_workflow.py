@@ -35,9 +35,6 @@ class FakeDatabase:
     def claim_new_results(self, results):
         return results
 
-    def pending_notifications(self, require_email, require_telegram, limit=1000):
-        return [self.result]
-
     def pending_telegram_notifications(self, limit=None):
         return [self.result, self.second_result][:limit]
 
@@ -80,7 +77,6 @@ class FakeEmailNotifier:
 
 def make_config():
     return AppConfig(
-        config_path=None,
         script_dir=None,
         db_path=None,
         token_file=None,
@@ -104,7 +100,6 @@ def make_config():
         telegram=TelegramConfig(token="token", chat_id="chat", max_per_run=2),
         log_to_console=False,
         timezone="UTC",
-        raw={},
     )
 
 

@@ -150,12 +150,6 @@ class EbayClient:
             self.logger.error(f"Exchange rate fetch failed: {exc}")
         return {}
 
-    async def search(self, site: str, full_query: str, limit: int = 200) -> list[dict[str, Any]]:
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
-            return await self._search_with_session(session, site, full_query, limit)
-
     async def _search_with_session(self, session, site: str, full_query: str, limit: int = 200) -> list[dict[str, Any]]:
         import aiohttp
 
