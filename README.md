@@ -13,8 +13,9 @@ Notifications can be sent by email and/or Telegram. Exchange rates are cached in
 - A Telegram bot token and chat id if Telegram notifications are enabled
 - Server like Raspberry PI should work fine. 
 
-## Quick installation (Raspberry PI, Debian, Ubuntu)
+## Quick installation guide (Raspberry PI, Debian, Ubuntu)
 
+```bash
   sudo apt update
   sudo apt install python3 python3-venv python3-pip
   cd /home/pi/fastebaysearch
@@ -24,8 +25,9 @@ Notifications can be sent by email and/or Telegram. Exchange rates are cached in
   cp ebaysearch.example.json ebaysearch.json
   nano ebaysearch.json
   python fastebaysearch.py ebaysearch.json
+```
 
-## Installation
+## Detailed installation instructions
 
 Create a virtual environment and install the runtime dependencies:
 
@@ -66,7 +68,7 @@ Set these eBay API credential fields:
 "ebay_client_secret": "your-client-secret"
 ```
 
-On the first run, the script requests an OAuth token and stores it in `oauth_token.json`. This file is ignored by git.
+On the first run the script requests an OAuth token and stores it in `oauth_token.json`.
 
 Important settings:
 
