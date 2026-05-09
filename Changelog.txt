@@ -1,14 +1,33 @@
-fastebaysearch 21.2.2026 23:05
+fastebaysearch 9.5.2026
+
+- Refactored all code to make it easier to maintain.
+- Reworked result claiming and notification flow. New results are now claimed in SQLite before notifications are sent, preventing duplicate notification races.
+- Added per-channel notification retry state for email and Telegram.
+- Improved SQLite locking and schema handling with BEGIN IMMEDIATE locks, idempotent schema creation and safer history run tracking.
+- Added exchange rate caching to SQLite with configurable TTL.
+- Improved eBay API robustness, token response validation and aiohttp session reuse.
+- Added api_concurrency, telegram_send_mode and stricter config validation.
+- Improved SMTP handling with proper STARTTLS SSL context and optional authentication.
+- Made OAuth token cache writes atomic and tightened token file permissions where supported.
+- Improved query generation, config path handling and database path restrictions.
+- Improved date parsing performance with from iso format fallback logic.
+- Reduced broad exception handling and replaced several generic catch blocks with specific exception types.
+- Made email and Telegram notifiers return success status and injectable for tests.
+- Added tests for notification retry behavior, history updates, config validation and notifier injection.
+- Added pytest.ini and .gitignore rules to keep pytest temp/cache directories out of test collection and version control.
+- Removed obsolete legacy database migration support and unused legacy conversion code.
+
+fastebaysearch 21.2.2026
 - Timezone bug fixed. 
 - Changed variable name unique_items to unique_item_ids. 
 
-fastebaysearch 21.2.2026 22:44
+fastebaysearch 21.2.2026
 - Added title, url, site, seller and price columns to the database.
 - Fixed exclude bug (double minus).
 - Minor improvement to db path handling. 
 - Other minor fixes and improvements.
 
-fastebaysearch 19.2.2026 19:42
+fastebaysearch 19.2.2026
 - Image send to Telegram added: telegram_send_mode auto, text, photo, photo_only
 - Added telegram switches telegram_send_mode and telegram_disable_web_preview
 - Added all queries logging when INFO is active.
@@ -18,7 +37,7 @@ fastebaysearch 19.2.2026 19:42
 - Fixed some variable names.
 - Fixed multiple async runs to single run.
 
-fastebaysearch 6.2.2026 15:59
+fastebaysearch 6.2.2026
 - Enhanced binary search (2/3 fewer searches).
 - Added Telegram support, one item at a time with images.
 - Added extensive error handling.
@@ -27,5 +46,5 @@ fastebaysearch 6.2.2026 15:59
 - Added currency conversion through Frankfurter API
 - Removed variants search as redundant; required terms can be used.
 
-fastebaysearch 13.2.2025 23:05
+fastebaysearch 13.2.2025
 - Initial version

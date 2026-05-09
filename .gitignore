@@ -1,6 +1,39 @@
-oauth_token.json
+# Local configuration and secrets
+/config.json
+/ebaysearch.json
+/oauth_token.json
+/.oauth_token.json.*.tmp
+/.env
+/.env.*
+
+# Runtime data
 *.db
-*.log
-config.json
+*.db-*
 *.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.log
+*.tmp
+.*.tmp
+
+# Python caches
 __pycache__/
+*.py[cod]
+*$py.class
+
+# Test and tool caches
+.pytest_cache/
+.tmp_pytest*/
+.tmp_perf_smoke_*/
+pytest-cache-files-*/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
