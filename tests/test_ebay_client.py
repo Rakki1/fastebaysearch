@@ -1,6 +1,7 @@
 import asyncio
 
 from fastebaysearch_app.ebay_client import EbayClient, parse_search_results
+from fastebaysearch_app.models import SearchQuery
 
 
 def test_parse_search_results_handles_nullable_fields():
@@ -90,3 +91,23 @@ def test_search_paginates_past_offset_1000():
 
     assert session.offsets == [0, 200, 400, 600, 800, 1000]
     assert len(results) == 1200
+
+
+class OutOfOrderClient(EbayClient):
+    async def _search_with_session(self, session, site, full_query, limit=200):
+        if full_query == "slow":
+            await asyncio.sleep(0.01)
+        item_id = "10001" if full_query == "slow" else "10002"
+        return [{"itemId": item_id, "title": full_query, "listingMarketplaceId": site}]
+
+
+def test_run_queries_preserves_configured_order_when_tasks_complete_out_of_order():
+    client = OutOfOrderClient("token")
+    queries = [
+        SearchQuery("slow", "slow"),
+        SearchQuery("fast", "fast"),
+    ]
+
+    results = asyncio.run(client.run_queries(["EBAY_US"], queries, {}))
+
+    assert [result.item_id for result in results] == ["10001", "10002"]

@@ -73,6 +73,8 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_seller ON ebayids (seller);
                 CREATE INDEX IF NOT EXISTS idx_email_pending ON ebayids (email_notified_at);
                 CREATE INDEX IF NOT EXISTS idx_telegram_pending ON ebayids (telegram_notified_at);
+                CREATE INDEX IF NOT EXISTS idx_email_pending_id ON ebayids (id) WHERE email_notified_at IS NULL;
+                CREATE INDEX IF NOT EXISTS idx_telegram_pending_id ON ebayids (id) WHERE telegram_notified_at IS NULL;
                 CREATE INDEX IF NOT EXISTS idx_exchange_rates_updated_at ON exchange_rates (updated_at);
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_history_run_number_unique ON history (run_number);
                 """

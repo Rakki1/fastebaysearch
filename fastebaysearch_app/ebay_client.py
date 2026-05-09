@@ -203,16 +203,28 @@ class EbayClient:
 
         semaphore = asyncio.Semaphore(self.concurrency_limit)
 
-        async def guarded_search(session, site: str, query: SearchQuery) -> tuple[SearchQuery, list[dict[str, Any]]]:
+        async def guarded_search(
+            index: int,
+            session,
+            site: str,
+            query: SearchQuery,
+        ) -> tuple[int, SearchQuery, list[dict[str, Any]]]:
             async with semaphore:
-                return query, await self._search_with_session(session, site, query.keywords)
+                return index, query, await self._search_with_session(session, site, query.keywords)
 
         async with aiohttp.ClientSession() as session:
-            tasks = [guarded_search(session, site, query) for site in sites for query in queries]
+            search_pairs = [(site, query) for site in sites for query in queries]
+            tasks = [
+                asyncio.create_task(guarded_search(index, session, site, query))
+                for index, (site, query) in enumerate(search_pairs)
+            ]
             self.logger.info(f"Launching {len(tasks)} API requests with concurrency={self.concurrency_limit}...")
-            raw_results = await asyncio.gather(*tasks)
+            parsed_batches: list[list[SearchResult]] = [[] for _ in tasks]
+            for task in asyncio.as_completed(tasks):
+                index, query, items = await task
+                parsed_batches[index] = parse_search_results(query.base_name, items, rates, self.logger)
 
         parsed: list[SearchResult] = []
-        for query, items in raw_results:
-            parsed.extend(parse_search_results(query.base_name, items, rates, self.logger))
+        for batch in parsed_batches:
+            parsed.extend(batch)
         return parsed
