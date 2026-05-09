@@ -77,7 +77,6 @@ class FakeEmailNotifier:
 
 def make_config():
     return AppConfig(
-        script_dir=None,
         db_path=None,
         token_file=None,
         ebay_client_id="client-id",
@@ -99,7 +98,6 @@ def make_config():
         ),
         telegram=TelegramConfig(token="token", chat_id="chat", max_per_run=2),
         log_to_console=False,
-        timezone="UTC",
     )
 
 

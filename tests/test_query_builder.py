@@ -4,7 +4,6 @@ from fastebaysearch_app.query_builder import build_queries
 
 def make_config():
     return AppConfig(
-        script_dir=None,
         db_path=None,
         token_file=None,
         ebay_client_id="client-id",
@@ -17,7 +16,6 @@ def make_config():
         email=None,
         telegram=None,
         log_to_console=False,
-        timezone="UTC",
     )
 
 
