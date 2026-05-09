@@ -1,4 +1,6 @@
-from fastebaysearch_app.ebay_client import parse_search_results
+import asyncio
+
+from fastebaysearch_app.ebay_client import EbayClient, parse_search_results
 
 
 def test_parse_search_results_handles_nullable_fields():
@@ -41,3 +43,50 @@ def test_parse_search_results_converts_known_currency():
 
     assert results[0].price == "10.00 EUR (12.00 USD)"
     assert results[0].link == "https://example.com/item"
+
+
+class FakeSearchResponse:
+    status = 200
+    headers = {}
+
+    def __init__(self, offset, limit, total):
+        self.offset = offset
+        self.limit = limit
+        self.total = total
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    async def json(self):
+        return {
+            "total": self.total,
+            "itemSummaries": [
+                {"itemId": f"v1|{self.offset + index}|0"}
+                for index in range(self.limit)
+            ],
+        }
+
+
+class FakeSearchSession:
+    def __init__(self, total):
+        self.total = total
+        self.offsets = []
+
+    def get(self, url, headers, params, timeout):
+        offset = int(params["offset"])
+        limit = int(params["limit"])
+        self.offsets.append(offset)
+        return FakeSearchResponse(offset, limit, self.total)
+
+
+def test_search_paginates_past_offset_1000():
+    session = FakeSearchSession(total=1200)
+    client = EbayClient("token")
+
+    results = asyncio.run(client._search_with_session(session, "EBAY_US", "camera", limit=200))
+
+    assert session.offsets == [0, 200, 400, 600, 800, 1000]
+    assert len(results) == 1200

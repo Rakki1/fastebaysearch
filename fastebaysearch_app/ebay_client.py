@@ -14,6 +14,7 @@ from .utils import clean_ebay_id, format_date, safe_url, scalar_text, write_priv
 TOKEN_URL = "https://api.ebay.com/identity/v1/oauth2/token"
 SEARCH_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
 EXCHANGE_RATE_URL = "https://api.frankfurter.app/latest?base=EUR&symbols=USD,GBP,AUD"
+EBAY_MAX_OFFSET = 9999
 
 
 class RateLimitError(Exception):
@@ -194,7 +195,7 @@ class EbayClient:
                     except (TypeError, ValueError):
                         total = 0
                     next_offset = offset + limit
-                    if total <= offset + len(items) or len(items) < limit or next_offset >= 1000:
+                    if total <= offset + len(items) or len(items) < limit or next_offset > EBAY_MAX_OFFSET:
                         break
                     offset = next_offset
         except RateLimitError:

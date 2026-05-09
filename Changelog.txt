@@ -1,4 +1,9 @@
-fastebaysearch 9.5.2026
+fastebayseach 0.6.1
+
+- Changed ebay offset maximum to 9999.
+- Added --estimate-api-budget. The output shows the estimated API calls per run, possible runs per day and a recommended cron interval.
+
+fastebaysearch 0.6.0 (9.5.2026)
 
 - Refactored all code to make it easier to maintain.
 - Reworked result claiming and notification flow. New results are now claimed in SQLite before notifications are sent, preventing duplicate notification races.

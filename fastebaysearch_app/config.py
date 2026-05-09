@@ -63,6 +63,9 @@ class AppConfig:
     raw: dict[str, Any]
     api_concurrency: int = 8
     exchange_rate_cache_ttl_hours: int = 24
+    ebay_daily_api_limit: int = 10000
+    api_budget_safety_percent: int = 90
+    estimated_results_per_query: int = 200
 
 
 def as_bool(value: object, default: bool = False) -> bool:
@@ -93,6 +96,13 @@ def parse_int(value: object, key: str, default: int, minimum: int | None = None)
 
     if minimum is not None and parsed < minimum:
         raise ConfigError(f"{key} must be at least {minimum}")
+    return parsed
+
+
+def parse_percent(value: object, key: str, default: int) -> int:
+    parsed = parse_int(value, key, default, minimum=1)
+    if parsed > 100:
+        raise ConfigError(f"{key} must be at most 100")
     return parsed
 
 
@@ -186,6 +196,14 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
             raw.get("exchange_rate_cache_ttl_hours"),
             "exchange_rate_cache_ttl_hours",
             24,
+            minimum=0,
+        ),
+        ebay_daily_api_limit=parse_int(raw.get("ebay_daily_api_limit"), "ebay_daily_api_limit", 10000, minimum=1),
+        api_budget_safety_percent=parse_percent(raw.get("api_budget_safety_percent"), "api_budget_safety_percent", 90),
+        estimated_results_per_query=parse_int(
+            raw.get("estimated_results_per_query"),
+            "estimated_results_per_query",
+            200,
             minimum=0,
         ),
     )

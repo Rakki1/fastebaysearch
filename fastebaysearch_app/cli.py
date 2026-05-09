@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 
+from .api_budget import estimate_api_budget, format_api_budget_estimate
 from .config import ConfigError, load_config
 from .database import Database
 from .ebay_client import EbayAuth, EbayClient, RateLimitError
@@ -18,7 +19,31 @@ from .workflow import Workflow, log_summary
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fastebaysearch.py")
     parser.add_argument("config", help="Path to JSON config file")
+    parser.add_argument(
+        "--estimate-api-budget",
+        action="store_true",
+        help="Estimate how many configured eBay searches can run per day without making API calls",
+    )
     return parser
+
+
+def run_api_budget_estimate(config_path: Path, script_dir: Path) -> int:
+    try:
+        config = load_config(config_path, script_dir)
+    except (ConfigError, OSError, ValueError) as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return 1
+
+    queries = build_queries(config)
+    estimate = estimate_api_budget(
+        config.ebay_sites,
+        queries,
+        daily_api_limit=config.ebay_daily_api_limit,
+        safety_percent=config.api_budget_safety_percent,
+        estimated_results_per_query=config.estimated_results_per_query,
+    )
+    print(format_api_budget_estimate(estimate))
+    return 0
 
 
 async def run_app(config_path: Path, script_dir: Path) -> int:
@@ -71,4 +96,6 @@ async def run_app(config_path: Path, script_dir: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     script_dir = Path(__file__).resolve().parent.parent
+    if args.estimate_api_budget:
+        return run_api_budget_estimate(Path(args.config), script_dir)
     return asyncio.run(run_app(Path(args.config), script_dir))

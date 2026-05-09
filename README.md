@@ -1,13 +1,33 @@
 # fastebaysearch
 
-`fastebaysearch` is a command-line Python tool for monitoring eBay Browse API search results. It searches configured eBay marketplaces, stores seen item IDs in a local SQLite database and sends notifications only for items that have not been reported before.
+`fastebaysearch` is a command-line Python tool for quickly and efficiently running large numbers of searches across multiple eBay marketplaces.
 
-Notifications can be sent by email and/or Telegram. Exchange rates are cached in SQLite so they do not need to be fetched on every run.
+It is especially useful for collectors who are looking for specific items but do not have the time or practical ability to maintain many separate saved searches on eBay.
 
-`fastebaysearch` is based on the original **ebaysearch** script version 0.4.0 by Kalevi Kolttonen. The original project provided a configurable Python tool for automated eBay searching, SQLite-based tracking of seen items, and email notifications. `fastebaysearch` continues that idea with a refactored codebase, significantly faster asynchronous searches, eBay Browse API support, Telegram notifications, improved SQLite handling, notification retry state, exchange-rate caching, stronger configuration validation and an expanded test suite.
+The tool searches configured eBay marketplaces, stores seen item IDs in a local SQLite database and sends notifications only for items that have not been reported before.
 
-Original project:
+Notifications can be sent by email and/or Telegram. 
+
+This tool is based on the original **ebaysearch** script version 0.4.0 by Kalevi Kolttonen. The original project provided a configurable Python tool for automated eBay searching, SQLite-based tracking of seen items and email notifications.
+
+`fastebaysearch` continues that idea with a refactored codebase, significantly faster asynchronous searches, eBay Browse API support, Telegram notifications, improved SQLite handling, notification retry state, exchange-rate caching, stronger configuration validation and an expanded test suite.
+
+Original project:  
 https://kolttonen.fi/computers_and_logic/programming/ebaysearch/ebaysearch.html
+
+##
+
+Features:
+
+- Asynchronous search execution for faster bulk searches and scheduled monitoring runs.
+- Ability to search all eBay sites with a single search.
+- eBay Browse API search monitoring for configured marketplaces.
+- Local SQLite database for tracking seen items and search history.
+- Comprehensive email reports with links and Telegram notifications with details and links for new results.
+- Telegram image notification support.
+- Currency conversion support with cached exchange rates.
+- Exchange rates are cached in SQLite, so they do not need to be fetched on every run.
+- Configurable search terms, required terms, excluded terms, notification limits and API concurrency.
 
 ## Requirements
 
@@ -18,15 +38,20 @@ https://kolttonen.fi/computers_and_logic/programming/ebaysearch/ebaysearch.html
 - A Telegram bot token and chat id if Telegram notifications are enabled
 - Server like Raspberry PI should work fine. 
 
-## Quick installation guide (Raspberry PI, Debian, Ubuntu)
+## Quick installation guide (Debian, Ubuntu)
 
 ```bash
   sudo apt update
-  sudo apt install python3 python3-venv python3-pip
-  cd /home/pi/fastebaysearch
+  sudo apt install -y python3 python3-venv python3-pip
+  
+  cd /home/<profile_name>/fastebaysearch
+  
   python3 -m venv .venv
-  . .venv/bin/activate
-  pip install -r requirements.txt
+  source .venv/bin/activate
+  
+  python -m pip install --upgrade pip
+  python -m pip install -r requirements.txt
+  
   cp ebaysearch.example.json ebaysearch.json
   nano ebaysearch.json
   python fastebaysearch.py ebaysearch.json
@@ -95,13 +120,33 @@ Important settings:
 
 Database, token, and log paths must stay under the project directory. The script rejects configured paths that escape the project directory.
 
-## Command-Line Usage
+## Usage
+
+For the first run, it is recommended to use email for receiving the results. You are likely to get a fairly large number of matches. Only after that should you enable Telegram in the configuration.
+
+You can adjust the maximum number of Telegram notifications in the configuration. By default a maximum of 25 notifications is allowed.
 
 Run from the project directory:
 
 ```bash
 python fastebaysearch.py ebaysearch.json
 ```
+
+Estimate the configured eBay API usage without making any eBay, token, database, email, or Telegram calls:
+
+```bash
+python fastebaysearch.py ebaysearch.json --estimate-api-budget
+```
+
+The estimate uses the number of configured `ebay_sites`, the generated search queries, and an estimated number of results per query. You can adjust these optional configuration values:
+
+```json
+"ebay_daily_api_limit": 10000,
+"api_budget_safety_percent": 90,
+"estimated_results_per_query": 200
+```
+
+The output shows the estimated API calls per run, possible runs per day, and a recommended cron interval.
 
 If you want to run without activating the virtual environment, call the virtual environment's Python directly:
 
