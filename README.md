@@ -6,18 +6,16 @@ It is especially useful for collectors who are looking for specific items but do
 
 The tool searches configured eBay marketplaces, stores seen item IDs in a local SQLite database and sends notifications only for items that have not been reported before.
 
-Notifications can be sent by email, Telegram and/or local HTML report files.
+Notifications can be sent by email or Telegram and results can also be written to local HTML report files.
 
 This tool is based on the original **ebaysearch** script version 0.4.0 by Kalevi Kolttonen. The original project provided a configurable Python tool for automated eBay searching, SQLite-based tracking of seen items and email notifications.
 
-`fastebaysearch` continues that idea with a refactored codebase, significantly faster asynchronous searches, eBay Browse API support, Telegram notifications, improved SQLite handling, notification retry state, exchange-rate caching, stronger configuration validation and an expanded test suite.
+`fastebaysearch` continues that idea with a refactored codebase, significantly faster asynchronous searches, eBay Browse API support, local HTML report for testing, Telegram notifications, improved SQLite handling, notification retry state, exchange-rate caching, stronger configuration validation and an expanded test suite.
 
 Original project:  
 https://kolttonen.fi/computers_and_logic/programming/ebaysearch/ebaysearch.html
 
-##
-
-Features:
+## Features
 
 - Asynchronous search execution for faster bulk searches and scheduled monitoring runs.
 - Ability to search all eBay sites with a single search.
@@ -27,16 +25,15 @@ Features:
 - Telegram image notification support.
 - Currency conversion support with cached exchange rates.
 - Exchange rates are cached in SQLite, so they do not need to be fetched on every run.
-- Configurable search terms, required terms, excluded terms, notification limits and API concurrency.
+- Configurable search terms, required terms, excluded terms, notification limits, and concurrent API request limits.
 
 ## Requirements
 
 - Python 3.11 or newer
-- An eBay Developer account and application credentials. The default eBay Browse API limit is typically 10,000 calls per day.
-- An eBay developer application with a `Client ID` and `Client Secret`
+- An eBay Developer account and an application with a `Client ID` and `Client Secret`.
 - SMTP credentials if email notifications are enabled.
-- A Telegram bot token and chat id if Telegram notifications are enabled
-- Server like Raspberry PI should work fine. 
+- A Telegram bot token and chat ID if Telegram notifications are enabled. See instructions: https://www.youtube.com/watch?v=SmckRL4n1_8&t=26s
+- A small server, such as a Raspberry Pi, should work fine.
 
 ## Quick installation guide (Debian, Ubuntu)
 
@@ -135,7 +132,7 @@ Run from the project directory:
 python fastebaysearch.py ebaysearch.json
 ```
 
-Estimate the configured eBay API usage without making any eBay, token, database, email, or Telegram calls:
+The default eBay Browse API limit is typically 10,000 calls per day. Estimate the configured eBay API usage without making any eBay, token, database, email or Telegram calls:
 
 ```bash
 python fastebaysearch.py ebaysearch.json --estimate-api-budget
@@ -173,7 +170,7 @@ Exit codes:
 - `1`: configuration, database, token, notification, or other runtime error.
 - `2`: eBay API rate limit was hit.
 
-## Scheduled Runs With Cron
+## Scheduled runs with cron
 
 Use absolute paths in cron. eBay API credentials are read from `ebaysearch.json`.
 
