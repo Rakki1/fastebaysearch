@@ -151,6 +151,14 @@ The estimate uses the number of configured `ebay_sites`, the generated search qu
 
 The output shows the estimated API calls per run, possible runs per day, and a recommended cron interval.
 
+Run a clean eBay search without reading from or writing to the SQLite database:
+
+```bash
+python fastebaysearch.py ebaysearch.json --clean-search
+```
+
+This writes the current eBay search results to a local HTML report and does not send email or Telegram notifications.
+
 If you want to run without activating the virtual environment, call the virtual environment's Python directly:
 
 ```bash
