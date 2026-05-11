@@ -1,6 +1,9 @@
 {
     "use_email": true,
     "use_telegram": false,
+    "use_html_report": false,
+    "html_report_dir": "reports",
+    "html_report_max_per_run": 1000,
     "telegram_max_per_run": 25,
     "telegram_token": "CHANGE_ME",
     "telegram_chat_id": "CHANGE_ME",

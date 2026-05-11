@@ -6,7 +6,7 @@ It is especially useful for collectors who are looking for specific items but do
 
 The tool searches configured eBay marketplaces, stores seen item IDs in a local SQLite database and sends notifications only for items that have not been reported before.
 
-Notifications can be sent by email and/or Telegram. 
+Notifications can be sent by email, Telegram and/or local HTML report files.
 
 This tool is based on the original **ebaysearch** script version 0.4.0 by Kalevi Kolttonen. The original project provided a configurable Python tool for automated eBay searching, SQLite-based tracking of seen items and email notifications.
 
@@ -23,7 +23,7 @@ Features:
 - Ability to search all eBay sites with a single search.
 - eBay Browse API search monitoring for configured marketplaces.
 - Local SQLite database for tracking seen items and search history.
-- Comprehensive email reports with links and Telegram notifications with details and links for new results.
+- Comprehensive email reports, local HTML report files, and Telegram notifications with details and links for new results.
 - Telegram image notification support.
 - Currency conversion support with cached exchange rates.
 - Exchange rates are cached in SQLite, so they do not need to be fetched on every run.
@@ -114,6 +114,9 @@ Important settings:
 - `use_telegram`: enables or disables Telegram notifications.
 - `telegram_max_per_run`: maximum number of Telegram messages sent in one run.
 - `telegram_send_mode`: one of `auto`, `photo`, `photo_only`, or `text`.
+- `use_html_report`: enables or disables local HTML report files for new results from the current run.
+- `html_report_dir`: local report directory, relative to the directory where the script is run. Defaults to the current working directory when omitted.
+- `html_report_max_per_run`: maximum number of new results written to one HTML report.
 - `api_concurrency`: number of eBay API searches allowed to run concurrently.
 - `exchange_rate_cache_ttl_hours`: exchange-rate cache lifetime in hours. Use `0` to disable the cache.
 - `log_to_console`: also writes logs to stdout/stderr when enabled.

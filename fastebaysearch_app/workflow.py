@@ -9,6 +9,7 @@ from .database import Database
 from .ebay_client import EbayClient
 from .models import SearchQuery, SearchResult
 from .notifications.email import EmailNotifier
+from .notifications.html_report import HtmlReportNotifier
 from .notifications.telegram import TelegramNotifier
 
 
@@ -35,6 +36,7 @@ class Workflow:
         queries: list[SearchQuery],
         logger: logging.Logger | None = None,
         email_notifier=None,
+        html_report_notifier=None,
         telegram_notifier=None,
     ):
         self.config = config
@@ -43,6 +45,7 @@ class Workflow:
         self.queries = queries
         self.logger = logger or logging.getLogger("fastebaysearch")
         self.email_notifier = email_notifier
+        self.html_report_notifier = html_report_notifier
         self.telegram_notifier = telegram_notifier
 
     async def run(self) -> WorkflowResult:
@@ -59,6 +62,18 @@ class Workflow:
         all_found_items = await self.ebay_client.run_queries(self.config.ebay_sites, self.queries, rates)
         unique_item_ids = dedupe_by_item_id(all_found_items)
         new_results = self.database.claim_new_results(unique_item_ids)
+
+        if self.config.use_html_report and new_results:
+            person_name = self.config.email.person_name if self.config.email else "User"
+            html_report = self.html_report_notifier or HtmlReportNotifier(
+                self.config.html_report_dir,
+                self.config.html_report_max_per_run,
+                self.logger,
+            )
+            try:
+                html_report.send(new_results, person_name)
+            except Exception as exc:
+                self.logger.error(f"HTML report notification failed: {exc}")
 
         if self.config.use_telegram and self.config.telegram:
             pending_telegram = self.database.pending_telegram_notifications(self.config.telegram.max_per_run)

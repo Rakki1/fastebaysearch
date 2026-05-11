@@ -1,5 +1,6 @@
 import asyncio
 
+from fastebaysearch_app.ebay_urls import build_item_web_url
 from fastebaysearch_app.ebay_client import EbayClient, parse_search_results
 from fastebaysearch_app.models import SearchQuery
 
@@ -43,7 +44,45 @@ def test_parse_search_results_converts_known_currency():
     results = parse_search_results("lens", raw_items, {"USD": 1.2})
 
     assert results[0].price == "10.00 EUR (12.00 USD)"
-    assert results[0].link == "https://example.com/item"
+    assert results[0].link == "https://www.ebay.com/itm/55555"
+
+
+def test_parse_search_results_builds_link_from_listing_marketplace():
+    raw_items = [
+        {
+            "itemId": "v1|1234567890|0",
+            "title": "US listing surfaced on Italy",
+            "listingMarketplaceId": "EBAY_US",
+            "itemWebUrl": "https://www.ebay.it/itm/1234567890?hash=abc",
+        },
+        {
+            "legacyItemId": "9876543210",
+            "title": "Italian listing",
+            "listingMarketplaceId": "EBAY_IT",
+            "itemWebUrl": "https://www.ebay.com/itm/9876543210?hash=def",
+        },
+    ]
+
+    results = parse_search_results("lens", raw_items, {})
+
+    assert results[0].ebay_site == "EBAY_US"
+    assert results[0].link == "https://www.ebay.com/itm/1234567890"
+    assert results[1].ebay_site == "EBAY_IT"
+    assert results[1].link == "https://www.ebay.it/itm/9876543210"
+
+
+def test_build_item_web_url_falls_back_for_unknown_marketplace():
+    link = build_item_web_url(
+        "1234567890",
+        "EBAY_UNKNOWN",
+        "https://example.com/item/1234567890?hash=abc",
+    )
+
+    assert link == "https://example.com/item/1234567890"
+
+
+def test_build_item_web_url_rejects_unsafe_fallback():
+    assert build_item_web_url("1234567890", "EBAY_UNKNOWN", "javascript:alert(1)") == ""
 
 
 class FakeSearchResponse:

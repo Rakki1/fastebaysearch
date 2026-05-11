@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -34,6 +35,9 @@ def test_load_config_validates_and_resolves_paths(tmp_path):
     assert config.ebay_client_id == "client-id"
     assert config.ebay_client_secret == "client-secret"
     assert config.email is None
+    assert config.use_html_report is False
+    assert config.html_report_dir == Path.cwd()
+    assert config.html_report_max_per_run == 1000
     assert config.exchange_rate_cache_ttl_hours == 24
 
 
@@ -54,6 +58,57 @@ def test_load_config_rejects_invalid_integer_values(tmp_path):
     config_path.write_text(json.dumps(data), encoding="utf-8")
 
     with pytest.raises(ConfigError, match="api_concurrency"):
+        load_config(config_path, tmp_path)
+
+
+def test_load_config_resolves_html_report_dir_from_current_working_directory(tmp_path, monkeypatch):
+    data = minimal_config()
+    data["use_html_report"] = True
+    data["html_report_dir"] = "reports"
+    data["html_report_max_per_run"] = "25"
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(data), encoding="utf-8")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    monkeypatch.chdir(run_dir)
+
+    config = load_config(config_path, tmp_path)
+
+    assert config.use_html_report is True
+    assert config.html_report_dir == run_dir / "reports"
+    assert config.html_report_max_per_run == 25
+
+
+def test_load_config_rejects_absolute_html_report_dir(tmp_path):
+    data = minimal_config()
+    data["html_report_dir"] = str(tmp_path / "reports")
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="HTML report directory"):
+        load_config(config_path, tmp_path)
+
+
+def test_load_config_rejects_html_report_dir_escape(tmp_path, monkeypatch):
+    data = minimal_config()
+    data["html_report_dir"] = "../reports"
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(data), encoding="utf-8")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    monkeypatch.chdir(run_dir)
+
+    with pytest.raises(ConfigError, match="HTML report directory"):
+        load_config(config_path, tmp_path)
+
+
+def test_load_config_rejects_invalid_html_report_max_per_run(tmp_path):
+    data = minimal_config()
+    data["html_report_max_per_run"] = 0
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="html_report_max_per_run"):
         load_config(config_path, tmp_path)
 
 

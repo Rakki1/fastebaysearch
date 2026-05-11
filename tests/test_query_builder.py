@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastebaysearch_app.config import AppConfig, SearchConfig
 from fastebaysearch_app.query_builder import build_queries
 
@@ -10,6 +12,9 @@ def make_config():
         ebay_client_secret="client-secret",
         use_email=False,
         use_telegram=False,
+        use_html_report=False,
+        html_report_dir=Path("."),
+        html_report_max_per_run=1000,
         ebay_sites=["EBAY_US"],
         exclude_terms=["broken", "too-long-exclude-term"],
         search=SearchConfig(base_terms=["camera"], required_terms=["canon", "nikon"]),

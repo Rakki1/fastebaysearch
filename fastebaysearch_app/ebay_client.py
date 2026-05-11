@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .ebay_urls import build_item_web_url
 from .models import SearchQuery, SearchResult
 from .utils import clean_ebay_id, format_date, safe_url, scalar_text, write_private_json_atomic
 
@@ -55,14 +56,15 @@ def parse_search_results(base_name: str, raw_items: list[Any], rates: dict[str, 
         if not isinstance(seller, dict):
             seller = {}
 
+        listing_marketplace_id = scalar_text(item.get("listingMarketplaceId"), "Unknown")
         results.append(
             SearchResult(
                 keywords=str(base_name),
                 name=scalar_text(item.get("title"), "Unknown"),
-                ebay_site=scalar_text(item.get("listingMarketplaceId"), "Unknown"),
+                ebay_site=listing_marketplace_id,
                 price=display_price,
                 item_id=item_id,
-                link=scalar_text(item.get("itemWebUrl")).split("?")[0],
+                link=build_item_web_url(item_id, listing_marketplace_id, item.get("itemWebUrl")),
                 seller=scalar_text(seller.get("username"), "Unknown"),
                 starts=format_date(item.get("itemCreationDate"), logger),
                 ends=format_date(item.get("itemEndDate"), logger),

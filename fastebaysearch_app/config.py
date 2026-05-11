@@ -51,6 +51,9 @@ class AppConfig:
     ebay_client_secret: str
     use_email: bool
     use_telegram: bool
+    use_html_report: bool
+    html_report_dir: Path
+    html_report_max_per_run: int
     ebay_sites: list[str]
     exclude_terms: list[str]
     search: SearchConfig
@@ -117,6 +120,21 @@ def resolve_under_script_dir(script_dir: Path, configured_path: object, default_
     return resolved
 
 
+def resolve_under_cwd(configured_path: object, default_name: str, label: str) -> Path:
+    raw = str(configured_path or default_name).strip()
+    expanded = os.path.expanduser(raw)
+    if os.path.isabs(expanded):
+        raise ConfigError(f"{label} must be a relative path: {raw}")
+
+    cwd_root = Path.cwd().resolve()
+    resolved = (cwd_root / expanded).resolve()
+    try:
+        resolved.relative_to(cwd_root)
+    except ValueError as exc:
+        raise ConfigError(f"{label} must stay under current working directory: {raw}") from exc
+    return resolved
+
+
 def load_config(config_path: Path, script_dir: Path) -> AppConfig:
     config_path = config_path.resolve()
     script_dir = script_dir.resolve()
@@ -170,6 +188,8 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
             disable_web_preview=as_bool(raw.get("telegram_disable_web_preview"), False),
         )
 
+    use_html_report = as_bool(raw.get("use_html_report"), False)
+
     return AppConfig(
         db_path=resolve_under_script_dir(script_dir, raw.get("ebay_urls_dbfile"), "ebay_items.db", "Database path"),
         token_file=resolve_under_script_dir(script_dir, raw.get("ebay_oauth_file"), "oauth_token.json", "Token cache path"),
@@ -177,6 +197,14 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
         ebay_client_secret=require_text(raw, "ebay_client_secret"),
         use_email=use_email,
         use_telegram=use_telegram,
+        use_html_report=use_html_report,
+        html_report_dir=resolve_under_cwd(raw.get("html_report_dir"), ".", "HTML report directory"),
+        html_report_max_per_run=parse_int(
+            raw.get("html_report_max_per_run"),
+            "html_report_max_per_run",
+            1000,
+            minimum=1,
+        ),
         ebay_sites=ebay_sites,
         exclude_terms=normalize_terms(raw.get("exclude_terms")),
         search=search,
