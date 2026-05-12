@@ -222,9 +222,16 @@ class EbayClient:
             ]
             self.logger.info(f"Launching {len(tasks)} API requests with concurrency={self.concurrency_limit}...")
             parsed_batches: list[list[SearchResult]] = [[] for _ in tasks]
-            for task in asyncio.as_completed(tasks):
-                index, query, items = await task
-                parsed_batches[index] = parse_search_results(query.base_name, items, rates, self.logger)
+            try:
+                for task in asyncio.as_completed(tasks):
+                    index, query, items = await task
+                    parsed_batches[index] = parse_search_results(query.base_name, items, rates, self.logger)
+            except Exception:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                raise
 
         parsed: list[SearchResult] = []
         for batch in parsed_batches:

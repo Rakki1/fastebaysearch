@@ -140,7 +140,9 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
     script_dir = script_dir.resolve()
 
     with config_path.open("r", encoding="utf-8") as handle:
-        raw: dict[str, Any] = json.load(handle)
+        raw = json.load(handle)
+    if not isinstance(raw, dict):
+        raise ConfigError("Config root must be an object")
 
     search_raw = raw.get("ebay_search_keywords")
     if not isinstance(search_raw, dict):

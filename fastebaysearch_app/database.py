@@ -228,6 +228,27 @@ class Database:
 
         return [_search_result_from_row(row) for row in rows]
 
+    def release_telegram_claims(self, results: list[SearchResult], error: str) -> None:
+        if not results:
+            return
+
+        with self.connect() as conn:
+            conn.executemany(
+                """
+                UPDATE ebayids
+                SET telegram_attempted_at = NULL,
+                    telegram_attempt_count = CASE
+                        WHEN telegram_attempt_count > 0 THEN telegram_attempt_count - 1
+                        ELSE 0
+                    END,
+                    telegram_error = ?
+                WHERE item_id = ?
+                  AND telegram_notified_at IS NULL;
+                """,
+                [(error, result.item_id) for result in results],
+            )
+            conn.commit()
+
     def _pending_channel_notifications(self, notified_column: str, limit: int | None = None) -> list[SearchResult]:
         if notified_column not in {"email_notified_at", "telegram_notified_at"}:
             raise ValueError(f"Invalid notification column: {notified_column}")

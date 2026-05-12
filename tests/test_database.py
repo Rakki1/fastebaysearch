@@ -155,6 +155,27 @@ def test_claim_pending_telegram_notifications_ignores_succeeded_items(tmp_path):
     assert claimed == []
 
 
+def test_release_telegram_claims_reverses_header_only_attempt(tmp_path):
+    db = Database(tmp_path / "items.db")
+    db.ensure_schema()
+    item = result("1")
+    db.claim_new_results([item])
+    claimed = db.claim_pending_telegram_notifications(limit=1, retry_after_hours=6, max_attempts=3)
+
+    db.release_telegram_claims(claimed, "Telegram header notification failed")
+
+    with sqlite3.connect(tmp_path / "items.db") as conn:
+        row = conn.execute(
+            """
+            SELECT telegram_attempted_at, telegram_attempt_count, telegram_error
+            FROM ebayids
+            WHERE item_id = '1';
+            """
+        ).fetchone()
+    assert row == (None, 0, "Telegram header notification failed")
+    assert [retry.item_id for retry in db.claim_pending_telegram_notifications(limit=1)] == ["1"]
+
+
 def test_exchange_rates_are_cached_in_database(tmp_path):
     db = Database(tmp_path / "items.db")
     db.ensure_schema()

@@ -32,6 +32,8 @@ class FakeDatabase:
         self.email_failed_ids = []
         self.telegram_claimed = False
         self.telegram_pending_used = False
+        self.telegram_released_ids = []
+        self.telegram_release_error = None
         self.cached_rates = {}
         self.replaced_rates = None
 
@@ -63,6 +65,10 @@ class FakeDatabase:
 
     def mark_telegram_failed(self, results, error):
         self.telegram_failed_ids = [result.item_id for result in results]
+
+    def release_telegram_claims(self, results, error):
+        self.telegram_released_ids = [result.item_id for result in results]
+        self.telegram_release_error = error
 
     def mark_email_succeeded(self, results):
         if not results:
@@ -267,4 +273,6 @@ def test_workflow_marks_claimed_telegram_rows_failed_when_header_fails():
     assert database.telegram_claimed is True
     assert database.telegram_succeeded is False
     assert database.telegram_success_ids == []
-    assert database.telegram_failed_ids == ["1", "2"]
+    assert database.telegram_failed_ids == []
+    assert database.telegram_released_ids == ["1", "2"]
+    assert database.telegram_release_error == "Telegram header notification failed"

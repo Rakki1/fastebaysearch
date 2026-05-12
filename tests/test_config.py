@@ -122,6 +122,14 @@ def test_load_config_requires_ebay_credentials(tmp_path):
         load_config(config_path, tmp_path)
 
 
+def test_load_config_rejects_non_object_json(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps([]), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="Config root must be an object"):
+        load_config(config_path, tmp_path)
+
+
 def test_load_config_rejects_invalid_telegram_send_mode(tmp_path):
     data = minimal_config()
     data["use_telegram"] = True

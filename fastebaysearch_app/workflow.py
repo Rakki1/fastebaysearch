@@ -80,11 +80,14 @@ class Workflow:
             telegram = self.telegram_notifier or TelegramNotifier(self.config.telegram, self.logger)
             if pending_telegram:
                 header_ok = await telegram.send_header(len(pending_telegram))
-                sent_telegram = await telegram.send(pending_telegram) if header_ok else []
-                sent_telegram_ids = {sent.item_id for sent in sent_telegram}
-                failed_telegram = [result for result in pending_telegram if result.item_id not in sent_telegram_ids]
-                self.database.mark_telegram_succeeded(sent_telegram)
-                self.database.mark_telegram_failed(failed_telegram, "Telegram notification failed")
+                if header_ok:
+                    sent_telegram = await telegram.send(pending_telegram)
+                    sent_telegram_ids = {sent.item_id for sent in sent_telegram}
+                    failed_telegram = [result for result in pending_telegram if result.item_id not in sent_telegram_ids]
+                    self.database.mark_telegram_succeeded(sent_telegram)
+                    self.database.mark_telegram_failed(failed_telegram, "Telegram notification failed")
+                else:
+                    self.database.release_telegram_claims(pending_telegram, "Telegram header notification failed")
 
         if self.config.use_email and self.config.email:
             pending_email = self.database.pending_email_notifications(self.config.email.max_per_run)

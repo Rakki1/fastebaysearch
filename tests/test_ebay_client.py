@@ -1,7 +1,9 @@
 import asyncio
 
 from fastebaysearch_app.ebay_urls import build_item_web_url
-from fastebaysearch_app.ebay_client import EbayClient, parse_search_results
+import pytest
+
+from fastebaysearch_app.ebay_client import EbayClient, RateLimitError, parse_search_results
 from fastebaysearch_app.models import SearchQuery
 
 
@@ -150,3 +152,32 @@ def test_run_queries_preserves_configured_order_when_tasks_complete_out_of_order
     results = asyncio.run(client.run_queries(["EBAY_US"], queries, {}))
 
     assert [result.item_id for result in results] == ["10001", "10002"]
+
+
+class CancellingClient(EbayClient):
+    def __init__(self):
+        super().__init__("token", concurrency_limit=2)
+        self.cancelled = False
+
+    async def _search_with_session(self, session, site, full_query, limit=200):
+        if full_query == "rate-limit":
+            raise RateLimitError("429 rate limit")
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        return [{"itemId": "10003", "title": full_query, "listingMarketplaceId": site}]
+
+
+def test_run_queries_cancels_remaining_tasks_when_one_task_raises():
+    client = CancellingClient()
+    queries = [
+        SearchQuery("slow", "slow"),
+        SearchQuery("rate-limit", "rate-limit"),
+    ]
+
+    with pytest.raises(RateLimitError):
+        asyncio.run(client.run_queries(["EBAY_US"], queries, {}))
+
+    assert client.cancelled is True
