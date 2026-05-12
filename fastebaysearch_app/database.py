@@ -52,7 +52,9 @@ class Database:
                     email_notified_at TEXT,
                     telegram_notified_at TEXT,
                     email_error TEXT,
-                    telegram_error TEXT
+                    telegram_error TEXT,
+                    telegram_attempted_at TEXT,
+                    telegram_attempt_count INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS history (
                     id INTEGER PRIMARY KEY,
@@ -67,6 +69,7 @@ class Database:
                 );
                 """
             )
+            self._ensure_ebayids_columns(cur)
             cur.executescript(
                 """
                 CREATE INDEX IF NOT EXISTS idx_item_id ON ebayids (item_id);
@@ -75,12 +78,22 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_telegram_pending ON ebayids (telegram_notified_at);
                 CREATE INDEX IF NOT EXISTS idx_email_pending_id ON ebayids (id) WHERE email_notified_at IS NULL;
                 CREATE INDEX IF NOT EXISTS idx_telegram_pending_id ON ebayids (id) WHERE telegram_notified_at IS NULL;
+                CREATE INDEX IF NOT EXISTS idx_telegram_claim ON ebayids (
+                    telegram_notified_at, telegram_attempted_at, telegram_attempt_count, id
+                );
                 CREATE INDEX IF NOT EXISTS idx_exchange_rates_updated_at ON exchange_rates (updated_at);
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_history_run_number_unique ON history (run_number);
                 """
             )
             self._seed_history(cur)
             conn.commit()
+
+    def _ensure_ebayids_columns(self, cur: sqlite3.Cursor) -> None:
+        columns = {str(row[1]) for row in cur.execute("PRAGMA table_info(ebayids);").fetchall()}
+        if "telegram_attempted_at" not in columns:
+            cur.execute("ALTER TABLE ebayids ADD COLUMN telegram_attempted_at TEXT;")
+        if "telegram_attempt_count" not in columns:
+            cur.execute("ALTER TABLE ebayids ADD COLUMN telegram_attempt_count INTEGER NOT NULL DEFAULT 0;")
 
     def _seed_history(self, cur: sqlite3.Cursor) -> None:
         cur.execute("SELECT COUNT(*) FROM history;")
@@ -168,6 +181,53 @@ class Database:
     def pending_telegram_notifications(self, limit: int | None = None) -> list[SearchResult]:
         return self._pending_channel_notifications("telegram_notified_at", limit)
 
+    def claim_pending_telegram_notifications(
+        self,
+        limit: int | None = None,
+        retry_after_hours: int = 6,
+        max_attempts: int = 3,
+    ) -> list[SearchResult]:
+        now = utc_now_str()
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=max(0, int(retry_after_hours)))).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        max_attempts = max(1, int(max_attempts))
+        params: list[object] = [max_attempts, cutoff]
+        limit_sql = ""
+        if limit is not None:
+            limit_sql = " LIMIT ?"
+            params.append(max(1, int(limit)))
+
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE;")
+            rows = conn.execute(
+                f"""
+                SELECT keywords, title, site, price, item_id, url, seller, starts, ends, image
+                FROM ebayids
+                WHERE telegram_notified_at IS NULL
+                  AND telegram_attempt_count < ?
+                  AND (telegram_attempted_at IS NULL OR telegram_attempted_at <= ?)
+                ORDER BY id ASC
+                {limit_sql};
+                """,
+                tuple(params),
+            ).fetchall()
+
+            item_ids = [row[4] for row in rows]
+            conn.executemany(
+                """
+                UPDATE ebayids
+                SET telegram_attempted_at = ?,
+                    telegram_attempt_count = telegram_attempt_count + 1,
+                    telegram_error = NULL
+                WHERE item_id = ?;
+                """,
+                [(now, item_id) for item_id in item_ids],
+            )
+            conn.commit()
+
+        return [_search_result_from_row(row) for row in rows]
+
     def _pending_channel_notifications(self, notified_column: str, limit: int | None = None) -> list[SearchResult]:
         if notified_column not in {"email_notified_at", "telegram_notified_at"}:
             raise ValueError(f"Invalid notification column: {notified_column}")
@@ -186,21 +246,7 @@ class Database:
         with self.connect() as conn:
             rows = conn.execute(query, params).fetchall()
 
-        return [
-            SearchResult(
-                keywords=row[0] or "",
-                name=row[1] or "",
-                ebay_site=row[2] or "",
-                price=row[3] or "",
-                item_id=row[4] or "",
-                link=row[5] or "",
-                seller=row[6] or "",
-                starts=row[7] or "",
-                ends=row[8] or "",
-                image=row[9] or "",
-            )
-            for row in rows
-        ]
+        return [_search_result_from_row(row) for row in rows]
 
     def mark_email_succeeded(self, results: list[SearchResult]) -> None:
         self._mark_channel(results, "email_notified_at", "email_error", utc_now_str(), None)
@@ -280,3 +326,18 @@ class Database:
 
 def _chunks(values: list[str], size: int) -> list[list[str]]:
     return [values[index : index + size] for index in range(0, len(values), size)]
+
+
+def _search_result_from_row(row) -> SearchResult:
+    return SearchResult(
+        keywords=row[0] or "",
+        name=row[1] or "",
+        ebay_site=row[2] or "",
+        price=row[3] or "",
+        item_id=row[4] or "",
+        link=row[5] or "",
+        seller=row[6] or "",
+        starts=row[7] or "",
+        ends=row[8] or "",
+        image=row[9] or "",
+    )

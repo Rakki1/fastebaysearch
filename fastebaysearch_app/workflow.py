@@ -76,7 +76,7 @@ class Workflow:
                 self.logger.error(f"HTML report notification failed: {exc}")
 
         if self.config.use_telegram and self.config.telegram:
-            pending_telegram = self.database.pending_telegram_notifications(self.config.telegram.max_per_run)
+            pending_telegram = self.database.claim_pending_telegram_notifications(self.config.telegram.max_per_run)
             telegram = self.telegram_notifier or TelegramNotifier(self.config.telegram, self.logger)
             if pending_telegram:
                 header_ok = await telegram.send_header(len(pending_telegram))

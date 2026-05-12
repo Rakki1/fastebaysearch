@@ -30,6 +30,8 @@ class FakeDatabase:
         self.email_success_ids = []
         self.telegram_failed_ids = []
         self.email_failed_ids = []
+        self.telegram_claimed = False
+        self.telegram_pending_used = False
         self.cached_rates = {}
         self.replaced_rates = None
 
@@ -37,6 +39,11 @@ class FakeDatabase:
         return results
 
     def pending_telegram_notifications(self, limit=None):
+        self.telegram_pending_used = True
+        return [self.result, self.second_result][:limit]
+
+    def claim_pending_telegram_notifications(self, limit=None, retry_after_hours=6, max_attempts=3):
+        self.telegram_claimed = True
         return [self.result, self.second_result][:limit]
 
     def pending_email_notifications(self, limit=None):
@@ -49,6 +56,8 @@ class FakeDatabase:
         self.replaced_rates = rates
 
     def mark_telegram_succeeded(self, results):
+        if not results:
+            return
         self.telegram_succeeded = True
         self.telegram_success_ids = [result.item_id for result in results]
 
@@ -56,6 +65,8 @@ class FakeDatabase:
         self.telegram_failed_ids = [result.item_id for result in results]
 
     def mark_email_succeeded(self, results):
+        if not results:
+            return
         self.email_succeeded = True
         self.email_success_ids = [result.item_id for result in results]
 
@@ -69,6 +80,14 @@ class FakeTelegramNotifier:
 
     async def send(self, results):
         return results[:1]
+
+
+class FakeTelegramHeaderFailureNotifier:
+    async def send_header(self, count):
+        return False
+
+    async def send(self, results):
+        raise AssertionError("send must not be called when header fails")
 
 
 class FakeEmailNotifier:
@@ -142,6 +161,8 @@ def test_workflow_uses_injected_notifiers_without_sleep_or_network():
     assert len(result.new_results) == 1
     assert database.telegram_succeeded is True
     assert database.email_succeeded is True
+    assert database.telegram_claimed is True
+    assert database.telegram_pending_used is False
     assert database.telegram_success_ids == ["1"]
     assert database.telegram_failed_ids == ["2"]
     assert database.email_success_ids == ["1"]
@@ -228,3 +249,22 @@ def test_workflow_html_report_failure_does_not_block_other_channels():
 
     assert database.telegram_succeeded is True
     assert database.email_succeeded is True
+
+
+def test_workflow_marks_claimed_telegram_rows_failed_when_header_fails():
+    database = FakeDatabase()
+    ebay_client = FakeEbayClient()
+    workflow = Workflow(
+        make_config(use_email=False),
+        database,
+        ebay_client,
+        [SearchQuery("camera", "camera")],
+        telegram_notifier=FakeTelegramHeaderFailureNotifier(),
+    )
+
+    asyncio.run(workflow.run())
+
+    assert database.telegram_claimed is True
+    assert database.telegram_succeeded is False
+    assert database.telegram_success_ids == []
+    assert database.telegram_failed_ids == ["1", "2"]

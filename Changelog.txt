@@ -3,8 +3,9 @@ fastebayseach 0.6.1
 - Changed ebay offset maximum to 9999.
 - Added --estimate-api-budget. The output shows the estimated API calls per run, possible runs per day and a recommended cron interval.
 - Added optional local HTML report output as an independent notification channel.
-- Fixed eBay item report links to use the listing marketplace domain instead of the API returned marketplace URL.
 - Added --clean-search for running an eBay search without reading from or writing to the database.
+- Added Telegram retry claim tracking to reduce duplicate messages after timeout errors.
+- Fixed eBay item report links to use the listing marketplace domain instead of the API returned marketplace URL.
 - Removed unused code.
 
 fastebaysearch 0.6.0
