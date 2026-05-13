@@ -60,7 +60,7 @@ async def run_app(config_path: Path, script_dir: Path) -> int:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 1
 
-    logger = setup_logging(script_dir / "fastebaysearch.log", config.log_to_console)
+    logger = setup_logging(script_dir / "fastebaysearch.log", config.log_to_console, config.log_max_size_mb)
     queries = build_queries(config)
     logger.info(f"Generated {len(queries)} optimized queries.")
     for idx, query in enumerate(queries, start=1):
@@ -107,7 +107,7 @@ async def run_clean_search(config_path: Path, script_dir: Path) -> int:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 1
 
-    logger = setup_logging(script_dir / "fastebaysearch.log", config.log_to_console)
+    logger = setup_logging(script_dir / "fastebaysearch.log", config.log_to_console, config.log_max_size_mb)
     queries = build_queries(config)
     logger.info(f"Generated {len(queries)} optimized queries.")
     for idx, query in enumerate(queries, start=1):

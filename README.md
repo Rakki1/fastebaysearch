@@ -117,6 +117,7 @@ Important settings:
 - `api_concurrency`: number of eBay API searches allowed to run concurrently.
 - `exchange_rate_cache_ttl_hours`: exchange-rate cache lifetime in hours. Use `0` to disable the cache.
 - `log_to_console`: also writes logs to stdout/stderr when enabled.
+- `log_max_size_mb`: maximum size of `fastebaysearch.log` before rotation, in MiB. Defaults to `10`.
 
 Database, token, and log paths must stay under the project directory. The script rejects configured paths that escape the project directory.
 
@@ -162,7 +163,7 @@ If you want to run without activating the virtual environment, call the virtual 
 /path/to/fastebaysearch/.venv/bin/python /path/to/fastebaysearch/fastebaysearch.py /path/to/fastebaysearch/ebaysearch.json
 ```
 
-The script writes logs to `fastebaysearch.log`. If `log_to_console` is enabled, logs are also printed to the console.
+The script writes logs to `fastebaysearch.log`. When the file exceeds `log_max_size_mb`, it is rotated and up to 5 backup log files are kept. If `log_to_console` is enabled, logs are also printed to the console.
 
 Exit codes:
 

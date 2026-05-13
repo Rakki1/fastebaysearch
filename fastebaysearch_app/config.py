@@ -60,6 +60,7 @@ class AppConfig:
     email: EmailConfig | None
     telegram: TelegramConfig | None
     log_to_console: bool
+    log_max_size_mb: int = 10
     api_concurrency: int = 8
     exchange_rate_cache_ttl_hours: int = 24
     ebay_daily_api_limit: int = 10000
@@ -213,6 +214,7 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
         email=email,
         telegram=telegram,
         log_to_console=as_bool(raw.get("log_to_console"), True),
+        log_max_size_mb=parse_int(raw.get("log_max_size_mb"), "log_max_size_mb", 10, minimum=1),
         api_concurrency=parse_int(raw.get("api_concurrency"), "api_concurrency", 8, minimum=1),
         exchange_rate_cache_ttl_hours=parse_int(
             raw.get("exchange_rate_cache_ttl_hours"),

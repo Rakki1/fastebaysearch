@@ -39,6 +39,28 @@ def test_load_config_validates_and_resolves_paths(tmp_path):
     assert config.html_report_dir == Path.cwd()
     assert config.html_report_max_per_run == 1000
     assert config.exchange_rate_cache_ttl_hours == 24
+    assert config.log_max_size_mb == 10
+
+
+def test_load_config_parses_log_max_size_mb(tmp_path):
+    data = minimal_config()
+    data["log_max_size_mb"] = "2"
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(data), encoding="utf-8")
+
+    config = load_config(config_path, tmp_path)
+
+    assert config.log_max_size_mb == 2
+
+
+def test_load_config_rejects_invalid_log_max_size_mb(tmp_path):
+    data = minimal_config()
+    data["log_max_size_mb"] = 0
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="log_max_size_mb"):
+        load_config(config_path, tmp_path)
 
 
 def test_load_config_rejects_db_path_escape(tmp_path):

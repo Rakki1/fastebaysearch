@@ -32,5 +32,6 @@
     "email_max_per_run": 1000,
     "api_concurrency": 8,
     "exchange_rate_cache_ttl_hours": 24,
-    "log_to_console": false
+    "log_to_console": false,
+    "log_max_size_mb": 10
 }

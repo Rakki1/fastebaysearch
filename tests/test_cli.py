@@ -98,7 +98,11 @@ def setup_clean_search_fakes(monkeypatch, report_notifier=FakeHtmlReportNotifier
     monkeypatch.setattr(cli, "EbayAuth", FakeEbayAuth)
     monkeypatch.setattr(cli, "EbayClient", FakeEbayClient)
     monkeypatch.setattr(cli, "HtmlReportNotifier", report_notifier)
-    monkeypatch.setattr(cli, "setup_logging", lambda path, log_to_console: logging.getLogger("test-clean-search"))
+    monkeypatch.setattr(
+        cli,
+        "setup_logging",
+        lambda path, log_to_console, log_max_size_mb: logging.getLogger("test-clean-search"),
+    )
 
 
 def test_parser_rejects_estimate_api_budget_with_clean_search():
