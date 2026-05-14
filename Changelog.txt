@@ -7,6 +7,9 @@ fastebayseach 0.6.1
 - Added Telegram retry claim tracking to reduce duplicate messages after timeout errors.
 - Fixed eBay item report links to use the listing marketplace domain instead of the API returned marketplace URL.
 - Fixed Telegram header retry accounting, eBay rate-limit task cancellation and invalid JSON config handling.
+- Improved pending notification query performance with partial SQLite indexes.
+- Added rotating log files with configurable max log size via log_max_size_mb.
+- Added and expanded tests for API budget estimation, CLI modes, HTML reports, Telegram retry handling and logging setup.
 - Removed unused code.
 
 fastebaysearch 0.6.0
