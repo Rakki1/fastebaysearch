@@ -12,7 +12,7 @@ The tool searches configured marketplaces, stores seen item IDs in a local SQLit
 
 **Email**
 
-![Email](samples/Email.png)
+![Email](samples/email.png)
 
 `fastebaysearch` is based on the original **ebaysearch** script version 0.4.0 by Kalevi Kolttonen.
 
