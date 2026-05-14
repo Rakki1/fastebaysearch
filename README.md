@@ -1,16 +1,22 @@
 # fastebaysearch
 
-`fastebaysearch` is a command-line Python tool for quickly and efficiently running large numbers of searches across multiple eBay marketplaces.
+`fastebaysearch` is a command-line Python tool for running large numbers of searches across multiple eBay marketplaces.
 
-It is especially useful for collectors who are looking for specific items but do not have the time or practical ability to maintain many separate saved searches on eBay.
+When run as a scheduled task, it provides a more powerful and flexible alternative to eBay’s own saved search alerts, especially for collectors tracking many specific items.
 
-The tool searches configured eBay marketplaces, stores seen item IDs in a local SQLite database and sends notifications only for items that have not been reported before.
+The tool searches configured marketplaces, stores seen item IDs in a local SQLite database, and reports only new results by email, Telegram, or local HTML report files.
 
-Notifications can be sent by email or Telegram and results can also be written to local HTML report files.
+**Telegram**
 
-This tool is based on the original **ebaysearch** script version 0.4.0 by Kalevi Kolttonen. The original project provided a configurable Python tool for automated eBay searching, SQLite-based tracking of seen items and email notifications.
+![Telegram](samples/Telegram.png)
 
-`fastebaysearch` continues that idea with a refactored codebase, significantly faster asynchronous searches, eBay Browse API support, local HTML report for testing, Telegram notifications, improved SQLite handling, notification retry state, exchange-rate caching, stronger configuration validation and an expanded test suite.
+**Email**
+
+![Email](samples/Email.png)
+
+`fastebaysearch` is based on the original **ebaysearch** script version 0.4.0 by Kalevi Kolttonen.
+
+It continues the original idea of configurable eBay searches, SQLite-based tracking, and email notifications with a refactored asynchronous codebase, eBay Browse API support, Telegram notifications, HTML reports, retry handling, exchange-rate caching, stronger validation, and expanded tests.
 
 Original project:  
 https://kolttonen.fi/computers_and_logic/programming/ebaysearch/ebaysearch.html
@@ -23,9 +29,8 @@ https://kolttonen.fi/computers_and_logic/programming/ebaysearch/ebaysearch.html
 - Local SQLite database for tracking seen items and search history.
 - Comprehensive email reports, local HTML report files, and Telegram notifications with details and links for new results.
 - Telegram image notification support.
-- Currency conversion support with cached exchange rates.
-- Exchange rates are cached in SQLite, so they do not need to be fetched on every run.
-- Configurable search terms, required terms, excluded terms, notification limits, and concurrent API request limits.
+- Currency conversion support with SQLite-cached exchange rates, so they do not need to be fetched on every run.
+- Configurable search terms, required and excluded terms, notification limits, parallel API request limits and more.
 
 ## Requirements
 
@@ -50,6 +55,9 @@ https://kolttonen.fi/computers_and_logic/programming/ebaysearch/ebaysearch.html
   python -m pip install -r requirements.txt
   
   cp ebaysearch.example.json ebaysearch.json
+```
+Edit the configuration file and run the script:
+```
   nano ebaysearch.json
   python fastebaysearch.py ebaysearch.json
 ```
@@ -75,17 +83,14 @@ pip install -r requirements.txt
 ## Configuration
 
 Copy the example configuration:
-
 ```bash
 cp ebaysearch.example.json ebaysearch.json
 ```
-
 On Windows PowerShell:
 
 ```powershell
 Copy-Item ebaysearch.example.json ebaysearch.json
 ```
-
 Edit `ebaysearch.json` for your own searches, eBay API credentials, and notification settings.
 
 Set these eBay API credential fields:
@@ -97,41 +102,69 @@ Set these eBay API credential fields:
 
 On the first run the script requests an OAuth token and stores it in `oauth_token.json`.
 
-Important settings:
+Configuration file fields:
 
-- `ebay_sites`: eBay marketplaces to search, for example `EBAY_US`, `EBAY_GB`, `EBAY_DE`.
-- `ebay_client_id`: eBay Developer application client id.
-- `ebay_client_secret`: eBay Developer application client secret.
-- `ebay_search_keywords.base_terms`: main search terms.
-- `ebay_search_keywords.required_terms`: required terms added to the generated search queries.
-- `exclude_terms`: terms excluded from generated search queries.
-- `ebay_urls_dbfile`: SQLite database file name. The file is created under the project directory.
 - `use_email`: enables or disables email notifications.
-- `email_max_per_run`: maximum number of pending email notification items handled in one run.
 - `use_telegram`: enables or disables Telegram notifications.
-- `telegram_max_per_run`: maximum number of Telegram messages sent in one run.
-- `telegram_send_mode`: one of `auto`, `photo`, `photo_only`, or `text`.
 - `use_html_report`: enables or disables local HTML report files for new results from the current run.
 - `html_report_dir`: local report directory, relative to the directory where the script is run. Defaults to the current working directory when omitted.
 - `html_report_max_per_run`: maximum number of new results written to one HTML report.
+- `telegram_max_per_run`: maximum number of Telegram messages sent in one run.
+- `telegram_token`: Telegram bot token used when Telegram notifications are enabled.
+- `telegram_chat_id`: Telegram chat id where notifications are sent.
+- `telegram_send_mode`: one of `auto`, `photo`, `photo_only`, or `text`.
+- `telegram_disable_web_preview`: disables Telegram link previews for text messages when enabled.
+- `ebay_sites`: eBay marketplaces to search, for example `EBAY_US`, `EBAY_GB`, `EBAY_DE`.
+- `exclude_terms`: terms excluded from generated search queries.
+- `ebay_client_id`: eBay Developer application client id.
+- `ebay_client_secret`: eBay Developer application client secret.
+- `ebay_urls_dbfile`: SQLite database file name. The file is created under the project directory.
+- `ebay_oauth_file`: OAuth token cache file name. The file is created under the project directory.
+- `ebay_search_keywords`: search keyword configuration object.
+- `ebay_search_keywords.base_terms`: main search terms.
+- `ebay_search_keywords.required_terms`: required terms added to the generated search queries.
+- `smtp_server`: SMTP server hostname used for email notifications.
+- `smtp_port`: SMTP server port.
+- `smtp_starttls_encryption`: enables or disables SMTP STARTTLS.
+- `smtp_authentication`: enables or disables SMTP authentication.
+- `smtp_login`: SMTP username.
+- `smtp_password`: SMTP password.
+- `email_sender`: email sender address.
+- `email_receiver`: email recipient address.
+- `email_subject`: subject line for result emails.
+- `email_person_name`: recipient name used in email and clean-search report text.
+- `email_max_per_run`: maximum number of pending email notification items handled in one run.
 - `api_concurrency`: number of eBay API searches allowed to run concurrently.
 - `exchange_rate_cache_ttl_hours`: exchange-rate cache lifetime in hours. Use `0` to disable the cache.
 - `log_to_console`: also writes logs to stdout/stderr when enabled.
 - `log_max_size_mb`: maximum size of `fastebaysearch.log` before rotation, in MiB. Defaults to `10`.
 
-Database, token, and log paths must stay under the project directory. The script rejects configured paths that escape the project directory.
+Database, token and log paths must stay under the project directory. The script rejects configured paths that escape the project directory.
 
 ## Usage
 
-For the first run, it is recommended to use email for receiving the results. You are likely to get a fairly large number of matches. Only after that should you enable Telegram in the configuration.
+For the first run, it is recommended to use the clean search parameter or email to receive the results. You are likely to get a fairly large number of matches in most cases. Only after that should you enable Telegram in the configuration.
 
-You can adjust the maximum number of Telegram notifications in the configuration. By default a maximum of 25 notifications is allowed.
+Run a clean eBay search without reading from or writing to the SQLite database:
+
+**Clean search without database reads or writes**
+```bash
+python fastebaysearch.py ebaysearch.json --clean-search
+```
+
+This writes the current eBay search results to a local HTML report and does not send email or Telegram notifications.
+
+**Telegram notifications**
+
+You can adjust the maximum number of Telegram notifications in the configuration. By default a maximum of 25 notifications is allowed. 
 
 Run from the project directory:
 
 ```bash
 python fastebaysearch.py ebaysearch.json
 ```
+
+**eBay Browse API budget**
 
 The default eBay Browse API limit is typically 10,000 calls per day. Estimate the configured eBay API usage without making any eBay, token, database, email or Telegram calls:
 
@@ -149,19 +182,7 @@ The estimate uses the number of configured `ebay_sites`, the generated search qu
 
 The output shows the estimated API calls per run, possible runs per day, and a recommended cron interval.
 
-Run a clean eBay search without reading from or writing to the SQLite database:
-
-```bash
-python fastebaysearch.py ebaysearch.json --clean-search
-```
-
-This writes the current eBay search results to a local HTML report and does not send email or Telegram notifications.
-
-If you want to run without activating the virtual environment, call the virtual environment's Python directly:
-
-```bash
-/path/to/fastebaysearch/.venv/bin/python /path/to/fastebaysearch/fastebaysearch.py /path/to/fastebaysearch/ebaysearch.json
-```
+**Log file**
 
 The script writes logs to `fastebaysearch.log`. When the file exceeds `log_max_size_mb`, it is rotated and up to 5 backup log files are kept. If `log_to_console` is enabled, logs are also printed to the console.
 
@@ -179,6 +200,13 @@ Example: run every 30 minutes.
 
 ```cron
 */30 * * * * cd /home/user/fastebaysearch && /home/user/fastebaysearch/.venv/bin/python /home/user/fastebaysearch/fastebaysearch.py /home/user/fastebaysearch/ebaysearch.json >> /home/user/fastebaysearch/cron.log 2>&1
+```
+**Running without Python's virtual environment**
+
+If you want to run without activating the virtual environment, call the virtual environment's Python directly:
+
+```bash
+/path/to/fastebaysearch/.venv/bin/python /path/to/fastebaysearch/fastebaysearch.py /path/to/fastebaysearch/ebaysearch.json
 ```
 
 ## Tests
