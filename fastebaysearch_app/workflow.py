@@ -70,6 +70,7 @@ class Workflow:
         unique_item_ids = dedupe_by_item_id(all_found_items)
         new_results = self.database.claim_new_results(unique_item_ids, enqueue_html=self.config.use_html_report)
         result = WorkflowResult(all_found_items, unique_item_ids, new_results, search_run)
+        notification_summary = search_run.summary if search_run.exit_code else "Search complete"
 
         if self.config.use_html_report:
             person_name = self.config.email.person_name if self.config.email else "User"
@@ -89,7 +90,7 @@ class Workflow:
 
         if self.config.use_telegram and self.config.telegram:
             try:
-                if not await self._notify_telegram(search_run.summary):
+                if not await self._notify_telegram(notification_summary):
                     result.notification_errors.append("Telegram notification failed")
             except Exception as exc:
                 self.logger.error("Telegram notification failed: %s", type(exc).__name__)
@@ -97,7 +98,7 @@ class Workflow:
 
         if self.config.use_email and self.config.email:
             try:
-                if not self._notify_email(search_run.summary):
+                if not self._notify_email(notification_summary):
                     result.notification_errors.append("Email notification failed")
             except Exception as exc:
                 self.logger.error("Email notification failed: %s", type(exc).__name__)
