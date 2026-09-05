@@ -1,4 +1,6 @@
-fastebaysearch 0.6.2 (unreleased)
+fastebaysearch 0.6.2
+
+Fix severity and upgrade notes: https://github.com/Rakki1/fastebaysearch/releases/tag/v0.6.2
 
 - Include fixed-price listings and auctions by default, configurable with ebay_buying_options.
 - Display current auction bids and distinguish unavailable prices from zero prices.

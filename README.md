@@ -339,7 +339,7 @@ A failed or partial search is not equivalent to a successful search with zero re
 
 ## Upgrading from 0.6.1
 
-This README includes changes prepared for 0.6.2; that version is not yet released. Use instructions matching the code version you have installed.
+These instructions apply to [release 0.6.2](https://github.com/Rakki1/fastebaysearch/releases/tag/v0.6.2). Use instructions matching the code version you have installed.
 
 Pause the scheduled task and make a SQLite backup before the first upgraded run. If copying database files directly, ensure every process using the database has stopped and retain any WAL files; SQLite's backup API is preferable for a consistent standalone backup. Schema upgrades are automatic, additive and transactional. Existing item history, email/Telegram delivery state and exchange rates are preserved.
 
