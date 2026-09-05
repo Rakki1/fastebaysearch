@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +66,7 @@ class AppConfig:
     ebay_daily_api_limit: int = 10000
     api_budget_safety_percent: int = 90
     estimated_results_per_query: int = 200
+    ebay_buying_options: list[str] = field(default_factory=lambda: ["FIXED_PRICE", "AUCTION"])
 
 
 def as_bool(value: object, default: bool = False) -> bool:
@@ -160,6 +161,12 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
     if not ebay_sites:
         raise ConfigError("ebay_sites must contain at least one marketplace")
 
+    buying_options = raw.get("ebay_buying_options", ["FIXED_PRICE", "AUCTION"])
+    if (not isinstance(buying_options, list) or not buying_options
+            or any(option not in ("FIXED_PRICE", "AUCTION") for option in buying_options)):
+        raise ConfigError("ebay_buying_options must be a non-empty list of FIXED_PRICE and/or AUCTION")
+    buying_options = list(dict.fromkeys(buying_options))
+
     use_email = as_bool(raw.get("use_email"), True)
     email = None
     if use_email:
@@ -209,6 +216,7 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
             minimum=1,
         ),
         ebay_sites=ebay_sites,
+        ebay_buying_options=buying_options,
         exclude_terms=normalize_terms(raw.get("exclude_terms")),
         search=search,
         email=email,

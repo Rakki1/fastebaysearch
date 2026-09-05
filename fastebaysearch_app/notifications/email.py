@@ -12,7 +12,7 @@ from ..models import SearchResult
 from ..utils import safe_url
 
 
-def render_email_html(results: list[SearchResult], person_name: str) -> str:
+def render_email_html(results: list[SearchResult], person_name: str, run_summary: str = "") -> str:
     def esc(value: object) -> str:
         return html.escape("" if value is None else str(value))
 
@@ -40,6 +40,7 @@ def render_email_html(results: list[SearchResult], person_name: str) -> str:
     return f"""
     <html>
     <head>
+        <meta charset="utf-8">
         <style>
             table {{
                 width: 100%;
@@ -57,7 +58,8 @@ def render_email_html(results: list[SearchResult], person_name: str) -> str:
     </head>
     <body>
         <p>Hello {esc(person_name)},</p>
-        <p>Found <b>{len(results)}</b> new items since last run:</p>
+        <p>{esc(run_summary)}</p>
+        <p><b>{len(results)}</b> items awaiting notification:</p>
         <table>
             <tr>
                 <th>#</th>
@@ -83,7 +85,7 @@ class EmailNotifier:
         self.config = config
         self.logger = logger or logging.getLogger("fastebaysearch")
 
-    def send(self, results: list[SearchResult]) -> list[SearchResult]:
+    def send(self, results: list[SearchResult], run_summary: str = "") -> list[SearchResult]:
         if not results:
             return []
         results = results[: self.config.max_per_run]
@@ -93,7 +95,7 @@ class EmailNotifier:
         message["From"] = self.config.sender
         message["To"] = self.config.receiver
         message["Subject"] = subject
-        message.attach(MIMEText(render_email_html(results, self.config.person_name), "html", "utf-8"))
+        message.attach(MIMEText(render_email_html(results, self.config.person_name, run_summary), "html", "utf-8"))
 
         try:
             with smtplib.SMTP(self.config.smtp_server, self.config.smtp_port, timeout=10) as server:

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .config import AppConfig
 from .database import Database
 from .ebay_client import EbayClient
-from .models import SearchQuery, SearchResult
+from .models import SearchQuery, SearchResult, SearchRun
 from .notifications.email import EmailNotifier
 from .notifications.html_report import HtmlReportNotifier
 from .notifications.telegram import TelegramNotifier
@@ -18,6 +18,12 @@ class WorkflowResult:
     all_found_items: list[SearchResult]
     unique_item_ids: list[SearchResult]
     new_results: list[SearchResult]
+    search_run: SearchRun = field(default_factory=SearchRun)
+    notification_errors: list[str] = field(default_factory=list)
+
+    @property
+    def exit_code(self) -> int:
+        return self.search_run.exit_code or int(bool(self.notification_errors))
 
 
 def dedupe_by_item_id(results: list[SearchResult]) -> list[SearchResult]:
@@ -59,11 +65,13 @@ class Workflow:
                 if rates:
                     self.logger.warning("Using stale cached exchange rates because live refresh failed.")
 
-        all_found_items = await self.ebay_client.run_queries(self.config.ebay_sites, self.queries, rates)
+        search_run = await self.ebay_client.run_queries(self.config.ebay_sites, self.queries, rates)
+        all_found_items = search_run.items
         unique_item_ids = dedupe_by_item_id(all_found_items)
-        new_results = self.database.claim_new_results(unique_item_ids)
+        new_results = self.database.claim_new_results(unique_item_ids, enqueue_html=self.config.use_html_report)
+        result = WorkflowResult(all_found_items, unique_item_ids, new_results, search_run)
 
-        if self.config.use_html_report and new_results:
+        if self.config.use_html_report:
             person_name = self.config.email.person_name if self.config.email else "User"
             html_report = self.html_report_notifier or HtmlReportNotifier(
                 self.config.html_report_dir,
@@ -71,35 +79,71 @@ class Workflow:
                 self.logger,
             )
             try:
-                html_report.send(new_results, person_name)
+                if not self.database.deliver_html_notifications(
+                    html_report, self.config.html_report_max_per_run, person_name, search_run.summary
+                ):
+                    result.notification_errors.append("HTML report write failed")
             except Exception as exc:
-                self.logger.error(f"HTML report notification failed: {exc}")
+                self.logger.error("HTML report notification failed: %s", type(exc).__name__)
+                result.notification_errors.append("HTML report notification failed")
 
         if self.config.use_telegram and self.config.telegram:
-            pending_telegram = self.database.claim_pending_telegram_notifications(self.config.telegram.max_per_run)
-            telegram = self.telegram_notifier or TelegramNotifier(self.config.telegram, self.logger)
-            if pending_telegram:
-                header_ok = await telegram.send_header(len(pending_telegram))
-                if header_ok:
-                    sent_telegram = await telegram.send(pending_telegram)
-                    sent_telegram_ids = {sent.item_id for sent in sent_telegram}
-                    failed_telegram = [result for result in pending_telegram if result.item_id not in sent_telegram_ids]
-                    self.database.mark_telegram_succeeded(sent_telegram)
-                    self.database.mark_telegram_failed(failed_telegram, "Telegram notification failed")
-                else:
-                    self.database.release_telegram_claims(pending_telegram, "Telegram header notification failed")
+            try:
+                if not await self._notify_telegram(search_run.summary):
+                    result.notification_errors.append("Telegram notification failed")
+            except Exception as exc:
+                self.logger.error("Telegram notification failed: %s", type(exc).__name__)
+                result.notification_errors.append("Telegram notification failed")
 
         if self.config.use_email and self.config.email:
-            pending_email = self.database.pending_email_notifications(self.config.email.max_per_run)
-            email = self.email_notifier or EmailNotifier(self.config.email, self.logger)
-            if pending_email:
-                sent_email = email.send(pending_email)
-                sent_email_ids = {sent.item_id for sent in sent_email}
-                failed_email = [result for result in pending_email if result.item_id not in sent_email_ids]
-                self.database.mark_email_succeeded(sent_email)
-                self.database.mark_email_failed(failed_email, "Email notification failed")
+            try:
+                if not self._notify_email(search_run.summary):
+                    result.notification_errors.append("Email notification failed")
+            except Exception as exc:
+                self.logger.error("Email notification failed: %s", type(exc).__name__)
+                result.notification_errors.append("Email notification failed")
 
-        return WorkflowResult(all_found_items, unique_item_ids, new_results)
+        return result
+
+    async def _notify_telegram(self, summary: str) -> bool:
+        pending = self.database.claim_pending_telegram_notifications(self.config.telegram.max_per_run)
+        if not pending:
+            return True
+        telegram = self.telegram_notifier or TelegramNotifier(self.config.telegram, self.logger)
+        try:
+            header_ok = await telegram.send_header(len(pending), run_summary=summary)
+        except Exception:
+            self.database.release_telegram_claims(pending, "Telegram header notification failed")
+            raise
+        if not header_ok:
+            self.database.release_telegram_claims(pending, "Telegram header notification failed")
+            return False
+        try:
+            sent = await telegram.send(pending)
+        except Exception:
+            self.database.mark_telegram_failed(pending, "Telegram notification failed")
+            raise
+        sent_ids = {item.item_id for item in sent}
+        failed = [item for item in pending if item.item_id not in sent_ids]
+        self.database.mark_telegram_succeeded(sent)
+        self.database.mark_telegram_failed(failed, "Telegram notification failed")
+        return not failed
+
+    def _notify_email(self, summary: str) -> bool:
+        pending = self.database.pending_email_notifications(self.config.email.max_per_run)
+        if not pending:
+            return True
+        email = self.email_notifier or EmailNotifier(self.config.email, self.logger)
+        try:
+            sent = email.send(pending, run_summary=summary)
+        except Exception:
+            self.database.mark_email_failed(pending, "Email notification failed")
+            raise
+        sent_ids = {item.item_id for item in sent}
+        failed = [item for item in pending if item.item_id not in sent_ids]
+        self.database.mark_email_succeeded(sent)
+        self.database.mark_email_failed(failed, "Email notification failed")
+        return not failed
 
     def _get_exchange_rates_from_cache(self) -> dict[str, float]:
         if self.config.exchange_rate_cache_ttl_hours <= 0:
@@ -112,11 +156,14 @@ class Workflow:
 
 
 def log_summary(logger: logging.Logger, result: WorkflowResult, start_time: float) -> None:
+    logger.info(result.search_run.summary)
+    for error in result.notification_errors:
+        logger.error(error)
     logger.info(f"Total raw results: {len(result.all_found_items)}")
     logger.info(f"Unique item IDs: {len(result.unique_item_ids)}")
     logger.info(f"New items found: {len(result.new_results)}")
     logger.info(
-        f"Completed. Items searched: {len(result.all_found_items)} | "
+        f"Finished with exit_code={result.exit_code}. Items searched: {len(result.all_found_items)} | "
         f"Unique item IDs: {len(result.unique_item_ids)} | "
         f"New items: {len(result.new_results)} | "
         f"Duration: {time.time() - start_time:.2f}s"

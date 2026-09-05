@@ -10,6 +10,7 @@
     "telegram_send_mode": "auto",
     "telegram_disable_web_preview": false,
     "ebay_sites": ["EBAY_GB", "EBAY_US", "EBAY_DE", "EBAY_AU", "EBAY_FR"],
+    "ebay_buying_options": ["FIXED_PRICE", "AUCTION"],
     "exclude_terms": [],
     "ebay_client_id": "CHANGE_ME",
     "ebay_client_secret": "CHANGE_ME",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,18 +24,23 @@ class Database:
         self.db_path = Path(db_path)
         self.logger = logger or logging.getLogger("fastebaysearch")
 
-    def connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def connect(self):
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path)
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA busy_timeout=30000;")
-        return conn
+        try:
+            conn.execute("PRAGMA busy_timeout=30000;")
+            conn.execute("PRAGMA journal_mode=WAL;")
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def ensure_schema(self) -> None:
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE;")
             cur = conn.cursor()
-            cur.executescript(
+            _execute_schema_statements(cur,
                 """
                 CREATE TABLE IF NOT EXISTS ebayids (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,10 +73,17 @@ class Database:
                     rate REAL NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS html_notifications (
+                    item_id TEXT PRIMARY KEY REFERENCES ebayids(item_id),
+                    queued_at TEXT NOT NULL,
+                    delivered_at TEXT,
+                    report_path TEXT,
+                    last_error TEXT
+                );
                 """
             )
             self._ensure_ebayids_columns(cur)
-            cur.executescript(
+            _execute_schema_statements(cur,
                 """
                 CREATE INDEX IF NOT EXISTS idx_item_id ON ebayids (item_id);
                 CREATE INDEX IF NOT EXISTS idx_seller ON ebayids (seller);
@@ -83,6 +96,8 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_exchange_rates_updated_at ON exchange_rates (updated_at);
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_history_run_number_unique ON history (run_number);
+                CREATE INDEX IF NOT EXISTS idx_html_pending ON html_notifications (queued_at, item_id)
+                    WHERE delivered_at IS NULL;
                 """
             )
             self._seed_history(cur)
@@ -124,7 +139,7 @@ class Database:
             )
             conn.commit()
 
-    def claim_new_results(self, results: list[SearchResult]) -> list[SearchResult]:
+    def claim_new_results(self, results: list[SearchResult], enqueue_html: bool = False) -> list[SearchResult]:
         if not results:
             return []
 
@@ -170,10 +185,54 @@ class Database:
                     for result in inserted
                 ],
             )
+            if enqueue_html:
+                cur.executemany(
+                    "INSERT INTO html_notifications (item_id, queued_at) VALUES (?, ?);",
+                    [(result.item_id, insert_time) for result in inserted],
+                )
             conn.commit()
 
         self.logger.info(f"Added {len(inserted)} new items to the database.")
         return inserted
+
+    def deliver_html_notifications(self, notifier, limit: int, person_name: str,
+                                   run_summary: str = "") -> bool:
+        # Hold the write lock only during local file I/O, never during network calls.
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE;")
+            rows = conn.execute(
+                """
+                SELECT e.keywords, e.title, e.site, e.price, e.item_id, e.url,
+                       e.seller, e.starts, e.ends, e.image
+                FROM html_notifications h JOIN ebayids e ON e.item_id = h.item_id
+                WHERE h.delivered_at IS NULL
+                ORDER BY h.queued_at, e.id LIMIT ?;
+                """, (max(1, int(limit)),),
+            ).fetchall()
+            pending = [_search_result_from_row(row) for row in rows]
+            if not pending:
+                return True
+            try:
+                sent = notifier.send(pending, person_name, run_summary=run_summary)
+                sent_ids = {result.item_id for result in sent}
+            except Exception as exc:
+                self.logger.error("HTML report notification failed: %s", type(exc).__name__)
+                sent_ids = set()
+            path = getattr(notifier, "last_report_path", None)
+            now = utc_now_str()
+            conn.executemany(
+                """UPDATE html_notifications
+                   SET delivered_at = ?, report_path = ?, last_error = ? WHERE item_id = ?;""",
+                [(now if result.item_id in sent_ids else None,
+                  str(path) if path is not None and result.item_id in sent_ids else None,
+                  None if result.item_id in sent_ids else "HTML report write failed",
+                  result.item_id) for result in pending],
+            )
+            remaining = conn.execute(
+                "SELECT COUNT(*) FROM html_notifications WHERE delivered_at IS NULL;"
+            ).fetchone()[0]
+            self.logger.info("HTML queue: delivered=%s pending=%s", len(sent_ids), remaining)
+            return all(result.item_id in sent_ids for result in pending)
 
     def pending_email_notifications(self, limit: int | None = None) -> list[SearchResult]:
         return self._pending_channel_notifications("email_notified_at", limit)
@@ -343,6 +402,13 @@ class Database:
                 [(currency, rate, updated_at) for currency, rate in cleaned_rates.items()],
             )
             conn.commit()
+
+
+def _execute_schema_statements(cur: sqlite3.Cursor, sql: str) -> None:
+    # executescript implicitly commits an existing transaction; keep migrations atomic.
+    for statement in sql.split(";"):
+        if statement.strip():
+            cur.execute(statement)
 
 
 def _chunks(values: list[str], size: int) -> list[list[str]]:

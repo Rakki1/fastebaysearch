@@ -1,0 +1,13 @@
+{
+  "use_email": false,
+  "use_telegram": false,
+  "use_html_report": false,
+  "ebay_client_id": "test-client-id",
+  "ebay_client_secret": "test-client-secret",
+  "ebay_sites": ["EBAY_GB", "EBAY_US", "EBAY_DE", "EBAY_AU", "EBAY_FR", "EBAY_IT"],
+  "exclude_terms": ["-Keilriemen"],
+  "ebay_search_keywords": {
+    "base_terms": ["Anirog", "Five-A-Side", "Loco Alligata", "Jungle Drums", "Ice Hunter", "Catacombs", "Bongo", "Galaxy Disk", "Hexpert", "(Slapshot, \"Slap Shot\")", "Battle Through Time", "Kong -hong", "Token of Ghall"],
+    "required_terms": ["commodore", "c64", "c-64"]
+  }
+}

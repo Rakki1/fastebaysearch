@@ -188,3 +188,24 @@ def test_load_config_respects_smtp_authentication_flag(tmp_path):
 
     assert config.email is not None
     assert config.email.authenticate is False
+
+
+@pytest.mark.parametrize("options", [[], ["BEST_OFFER"], "AUCTION", None, [False], [{}]])
+def test_invalid_buying_options_rejected(tmp_path, options):
+    data = minimal_config()
+    data["ebay_buying_options"] = options
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(data))
+    with pytest.raises(ConfigError, match="ebay_buying_options"):
+        load_config(path, tmp_path)
+
+
+@pytest.mark.parametrize("options", [["AUCTION"], ["FIXED_PRICE"], ["FIXED_PRICE", "AUCTION"]])
+def test_buying_options_defaults_and_selection(tmp_path, options):
+    data = minimal_config()
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(data))
+    assert load_config(path, tmp_path).ebay_buying_options == ["FIXED_PRICE", "AUCTION"]
+    data["ebay_buying_options"] = options
+    path.write_text(json.dumps(data))
+    assert load_config(path, tmp_path).ebay_buying_options == options

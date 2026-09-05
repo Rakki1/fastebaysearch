@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .ebay_client import EBAY_MAX_OFFSET
+from .ebay_client import EBAY_MAX_OFFSET, SEARCH_RETRIES
 from .models import SearchQuery
 
 DEFAULT_SEARCH_LIMIT = 200
@@ -18,6 +18,8 @@ class ApiBudgetEstimate:
     estimated_pages_per_query: int
     calls_per_run_minimum: int
     calls_per_run_estimated: int
+    calls_per_run_with_retries: int
+    calls_per_run_maximum: int
     daily_api_limit: int
     safe_daily_api_limit: int
     possible_runs_per_day_minimum: int
@@ -54,6 +56,9 @@ def estimate_api_budget(
         estimated_pages_per_query=estimated_pages,
         calls_per_run_minimum=calls_minimum,
         calls_per_run_estimated=calls_estimated,
+        # Two transient retries per page plus one 401 replay per search in flight.
+        calls_per_run_with_retries=calls_estimated * (1 + SEARCH_RETRIES) + combinations,
+        calls_per_run_maximum=combinations * (EBAY_MAX_OFFSET // search_limit + 1) * (1 + SEARCH_RETRIES) + combinations,
         daily_api_limit=max(0, int(daily_api_limit)),
         safe_daily_api_limit=safe_daily_limit,
         possible_runs_per_day_minimum=runs_minimum,
@@ -78,11 +83,15 @@ def format_api_budget_estimate(estimate: ApiBudgetEstimate) -> str:
             f"Estimated pages per query: {estimate.estimated_pages_per_query}",
             f"API calls per run, minimum: {estimate.calls_per_run_minimum}",
             f"API calls per run, estimated: {estimate.calls_per_run_estimated}",
+            f"Browse calls for estimated pages including retry allowance: {estimate.calls_per_run_with_retries}",
+            f"Maximum Browse calls at the result cap including retries: {estimate.calls_per_run_maximum}",
+            "OAuth calls (separate from Browse): 0-2 per run (initial token and one forced refresh)",
             f"Daily API limit: {estimate.daily_api_limit}",
             f"Safe daily limit: {estimate.safe_daily_api_limit}",
             f"Possible runs per day, minimum: {estimate.possible_runs_per_day_minimum}",
             f"Possible runs per day, estimated: {estimate.possible_runs_per_day_estimated}",
             f"Recommended cron interval: {interval}",
+            "The interval uses the normal estimate, not the retry allowance or the maximum result count.",
         ]
     )
 

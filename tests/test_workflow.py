@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 
 from fastebaysearch_app.config import AppConfig, EmailConfig, SearchConfig, TelegramConfig
-from fastebaysearch_app.models import SearchQuery, SearchResult
+from fastebaysearch_app.models import SearchQuery, SearchResult, SearchRun
 from fastebaysearch_app.workflow import Workflow
 
 
@@ -15,9 +15,9 @@ class FakeEbayClient:
         return {"USD": 1.2}
 
     async def run_queries(self, sites, queries, rates):
-        return [
+        return SearchRun(items=[
             SearchResult("camera", "Camera", "EBAY_US", "10 EUR", "1", "https://example.com", "seller", "", ""),
-        ]
+        ])
 
 
 class FakeDatabase:
@@ -37,8 +37,11 @@ class FakeDatabase:
         self.cached_rates = {}
         self.replaced_rates = None
 
-    def claim_new_results(self, results):
+    def claim_new_results(self, results, enqueue_html=False):
         return results
+
+    def deliver_html_notifications(self, notifier, limit, person_name, run_summary=""):
+        return bool(notifier.send([self.result], person_name, run_summary=run_summary))
 
     def pending_telegram_notifications(self, limit=None):
         self.telegram_pending_used = True
@@ -81,7 +84,7 @@ class FakeDatabase:
 
 
 class FakeTelegramNotifier:
-    async def send_header(self, count):
+    async def send_header(self, count, run_summary=""):
         return True
 
     async def send(self, results):
@@ -89,7 +92,7 @@ class FakeTelegramNotifier:
 
 
 class FakeTelegramHeaderFailureNotifier:
-    async def send_header(self, count):
+    async def send_header(self, count, run_summary=""):
         return False
 
     async def send(self, results):
@@ -97,7 +100,7 @@ class FakeTelegramHeaderFailureNotifier:
 
 
 class FakeEmailNotifier:
-    def send(self, results):
+    def send(self, results, run_summary=""):
         return results[:1]
 
 
@@ -106,14 +109,14 @@ class FakeHtmlReportNotifier:
         self.sent_results = []
         self.person_name = None
 
-    def send(self, results, person_name="User"):
+    def send(self, results, person_name="User", run_summary=""):
         self.sent_results = list(results)
         self.person_name = person_name
         return results
 
 
 class FailingHtmlReportNotifier:
-    def send(self, results, person_name="User"):
+    def send(self, results, person_name="User", run_summary=""):
         raise RuntimeError("write failed")
 
 
@@ -276,3 +279,52 @@ def test_workflow_marks_claimed_telegram_rows_failed_when_header_fails():
     assert database.telegram_failed_ids == []
     assert database.telegram_released_ids == ["1", "2"]
     assert database.telegram_release_error == "Telegram header notification failed"
+
+
+def test_telegram_exception_does_not_block_email_and_marks_failure(caplog):
+    class BrokenTelegram(FakeTelegramNotifier):
+        async def send(self, results):
+            raise OSError("https://api.telegram.org/botTEST-SECRET/sendMessage")
+
+    database = FakeDatabase()
+    workflow = Workflow(make_config(), database, FakeEbayClient(), [],
+                        telegram_notifier=BrokenTelegram(), email_notifier=FakeEmailNotifier())
+    result = asyncio.run(workflow.run())
+    assert result.exit_code == 1
+    assert database.email_succeeded is True
+    assert database.telegram_failed_ids == ["1", "2"]
+    assert "TEST-SECRET" not in caplog.text
+
+
+def test_partial_search_summary_reaches_email_and_telegram():
+    from fastebaysearch_app.models import QueryOutcome
+    summaries = []
+
+    class Client(FakeEbayClient):
+        async def run_queries(self, *args):
+            run = await super().run_queries(*args)
+            run.outcomes = [QueryOutcome("EBAY_GB", SearchQuery("camera", "camera"), status="failed")]
+            return run
+
+    class Telegram(FakeTelegramNotifier):
+        async def send_header(self, count, run_summary=""):
+            summaries.append(run_summary)
+            return True
+
+    class Email(FakeEmailNotifier):
+        def send(self, results, run_summary=""):
+            summaries.append(run_summary)
+            return results
+
+    result = asyncio.run(Workflow(make_config(), FakeDatabase(), Client(), [],
+                                 telegram_notifier=Telegram(), email_notifier=Email()).run())
+    assert result.exit_code == 1
+    assert len(summaries) == 2
+    assert all("PARTIAL SEARCH" in summary for summary in summaries)
+
+
+def test_html_failure_returns_error_with_other_channels_disabled():
+    result = asyncio.run(Workflow(make_config(False, False, True), FakeDatabase(), FakeEbayClient(), [],
+                                 html_report_notifier=FailingHtmlReportNotifier()).run())
+    assert result.exit_code == 1
+    assert result.notification_errors

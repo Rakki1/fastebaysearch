@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .config import ConfigError
 from .models import SearchQuery
 from .utils import normalize_terms
 
@@ -16,11 +17,13 @@ def build_queries(config, max_q_len: int = 100) -> list[SearchQuery]:
 
         for exclude in exclude_terms:
             clean_exclude = exclude.lstrip("-").strip('"')
-            candidate = f'{full_query} -"{clean_exclude}"'
-            if len(candidate) <= max_q_len:
-                full_query = candidate
-            else:
-                break
+            full_query = f'{full_query} -"{clean_exclude}"'
+
+        if len(full_query) > max_q_len:
+            raise ConfigError(
+                f"Query for {base!r} is {len(full_query)} characters (maximum {max_q_len}): "
+                f"{full_query}. Shorten the terms or split the search configuration."
+            )
 
         queries.append(SearchQuery(keywords=full_query, base_name=base))
 

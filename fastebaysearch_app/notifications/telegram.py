@@ -30,23 +30,24 @@ class TelegramNotifier:
         self.logger = logger or logging.getLogger("fastebaysearch")
         self.sleep_seconds = sleep_seconds
 
-    async def send_header(self, count: int) -> bool:
+    async def send_header(self, count: int, run_summary: str = "") -> bool:
         import aiohttp
 
-        text = f"<b>SEARCH COMPLETE ({datetime.now().strftime('%d.%m. at %H:%M')})</b>\nFound <b>{count}</b> new items!"
+        text = (f"<b>SEARCH REPORT ({datetime.now().strftime('%d.%m. at %H:%M')})</b>\n"
+                f"{html.escape(run_summary)}\n<b>{count}</b> items awaiting notification")
         url = f"https://api.telegram.org/bot{self.config.token}/sendMessage"
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
             try:
                 async with session.post(url, json={"chat_id": self.config.chat_id, "text": text, "parse_mode": "HTML"}) as response:
                     data = await response.json(content_type=None)
-                    if response.status != 200 or not data.get("ok", False):
-                        self.logger.error(f"Telegram header error: HTTP {response.status} - {data}")
+                    if response.status != 200 or not isinstance(data, dict) or not data.get("ok", False):
+                        self.logger.error("Telegram header error: HTTP %s", response.status)
                         return False
                     return True
             except asyncio.TimeoutError:
                 self.logger.error("Telegram header timeout.")
             except (aiohttp.ClientError, OSError, ValueError) as exc:
-                self.logger.error(f"Telegram header network error: {exc}")
+                self.logger.error("Telegram header network error: %s", type(exc).__name__)
         return False
 
     async def send(self, results: list[SearchResult]) -> list[SearchResult]:
@@ -82,12 +83,14 @@ class TelegramNotifier:
         return sent_results
 
     async def _post(self, session, base_url: str, url: str, payload: dict[str, object], result: SearchResult) -> bool:
+        import aiohttp
+
         try:
             async with session.post(url, json=payload) as response:
                 data = await response.json(content_type=None)
-                if response.status == 200 and data.get("ok", False):
+                if response.status == 200 and isinstance(data, dict) and data.get("ok", False):
                     return True
-                self.logger.error(f"Telegram error for {result.name}: HTTP {response.status} - {data}")
+                self.logger.error("Telegram error for %s: HTTP %s", result.name, response.status)
 
                 if url.endswith("/sendPhoto") and self.config.send_mode != "photo_only":
                     fallback = {
@@ -98,15 +101,16 @@ class TelegramNotifier:
                     }
                     async with session.post(f"{base_url}/sendMessage", json=fallback) as fallback_response:
                         fallback_data = await fallback_response.json(content_type=None)
-                        if fallback_response.status == 200 and fallback_data.get("ok", False):
+                        if (fallback_response.status == 200 and isinstance(fallback_data, dict)
+                                and fallback_data.get("ok", False)):
                             return True
                         else:
                             self.logger.error(
                                 f"Telegram text fallback failed for {result.name}: "
-                                f"HTTP {fallback_response.status} - {fallback_data}"
+                                f"HTTP {fallback_response.status}"
                             )
         except asyncio.TimeoutError:
             self.logger.error(f"Telegram timeout for {result.name}")
         except (aiohttp.ClientError, OSError, ValueError) as exc:
-            self.logger.error(f"Telegram network error for {result.name}: {exc}")
+            self.logger.error("Telegram network error for %s: %s", result.name, type(exc).__name__)
         return False

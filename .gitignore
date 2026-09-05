@@ -1,6 +1,7 @@
 # Local configuration and secrets
 /config.json
 /ebaysearch.json
+/konfiguraatio.json
 /oauth_token.json
 /.oauth_token.json.*.tmp
 /.env

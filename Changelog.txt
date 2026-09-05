@@ -1,3 +1,19 @@
+fastebaysearch 0.6.2 (unreleased)
+
+- Include fixed-price listings and auctions by default, configurable with ebay_buying_options.
+- Display current auction bids and distinguish unavailable prices from zero prices.
+- Search newest listings first and report the 10,000-result cutoff as an incomplete run.
+- Preserve successful pages and searches when other requests fail or hit a rate limit.
+- Retry transient search failures twice and share one OAuth refresh across concurrent 401 responses.
+- Reject queries exceeding 100 characters before any API/database access; never silently drop exclusions.
+- Add a persistent HTML delivery queue with atomic report files, retry support and concurrent-run protection.
+- Add the HTML queue without re-enqueuing existing history; close SQLite connections and keep schema upgrades transactional.
+- Report search completeness in HTML, email and Telegram summaries, with nonzero exit codes on failures.
+- Fix Telegram exception handling and prevent token-bearing URLs from appearing in error logs.
+- Show clean-search report truncation explicitly; clean search still does not access the database.
+- Extend API budget estimates with retry allowances and separate OAuth call counts.
+- Add regression coverage for collector queries, partial searches, retries, migrations and notification delivery.
+
 fastebayseach 0.6.1
 
 - Changed ebay offset maximum to 9999.
