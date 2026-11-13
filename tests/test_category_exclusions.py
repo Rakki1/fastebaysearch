@@ -95,3 +95,8 @@ def test_example_starts_with_html_only_and_video_game_categories():
     assert config.use_html_report is True
     assert config.use_email is False
     assert config.use_telegram is False
+    from fastebaysearch_app.query_builder import build_queries
+    assert [q.keywords for q in build_queries(config)] == [
+        '("commodore 64", "c64", "c-64") "The Last Ninja"',
+        '("commodore 64", "c64", "c-64") "Impossible Mission"',
+    ]

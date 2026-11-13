@@ -1,9 +1,12 @@
-Unreleased
+fastebaysearch 0.6.4
 
+- Release notes: https://github.com/Rakki1/fastebaysearch/releases/tag/v0.6.4
 - Provide an HTML-only C64 collector starter configuration with credential placeholders.
 - Add per-marketplace included categories, separate category searches, and category-aware API budget estimates.
-- Add per-marketplace category exclusions and vehicle-parts configuration examples.
+- Add per-marketplace category exclusions and category-filtering instructions.
+- Reject invalid-category API warnings and fix duplicate quoting in the starter search.
 - Disable description search in the example configuration; ignore generated HTML reports in Git.
+- Simplify the README and add Linux and PowerShell update commands; 232 tests pass.
 
 fastebaysearch 0.6.3
 
