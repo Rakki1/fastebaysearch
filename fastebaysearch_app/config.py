@@ -15,6 +15,30 @@ class ConfigError(ValueError):
 
 
 @dataclass(frozen=True)
+class CategoryLookupConfig:
+    ebay_sites: list[str]
+    ebay_client_id: str
+    ebay_client_secret: str
+    token_file: Path
+
+
+def load_category_lookup_config(config_path: Path, script_dir: Path) -> CategoryLookupConfig:
+    """Category discovery needs credentials and sites, not listing/notification settings."""
+    with config_path.open(encoding="utf-8") as handle:
+        raw = json.load(handle)
+    if not isinstance(raw, dict):
+        raise ConfigError("Config root must be an object")
+    sites = normalize_terms(raw.get("ebay_sites"))
+    if not sites or any(not re.fullmatch(r"EBAY_[A-Z_]+", site) for site in sites):
+        raise ConfigError("ebay_sites must contain marketplace IDs such as EBAY_GB")
+    return CategoryLookupConfig(
+        list(dict.fromkeys(sites)), require_text(raw, "ebay_client_id"),
+        require_text(raw, "ebay_client_secret"),
+        resolve_under_script_dir(script_dir, raw.get("ebay_oauth_file"), "oauth_token.json", "Token path"),
+    )
+
+
+@dataclass(frozen=True)
 class SearchConfig:
     base_terms: list[str]
     required_terms: list[str]

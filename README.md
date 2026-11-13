@@ -179,15 +179,16 @@ Every partial or failed search run sends one summary per enabled channel even wi
 
 ## Run modes
 
-All modes load and validate the configuration, including credentials for enabled channels. Disable email/Telegram for a preview when you have not configured their credentials.
+Listing searches and budget estimates validate the configuration, including credentials for enabled channels. Disable email/Telegram for a preview when you have not configured their credentials. Category lookup needs only eBay credentials, `ebay_sites`, and the optional token-cache path.
 
 | Mode | API calls | SQLite | Output |
 | --- | --- | --- | --- |
 | Normal run (no flag) | eBay searches, OAuth as needed, exchange rates on cache miss | Reads/writes history, seen items and delivery state | Enabled HTML, email and Telegram channels, including pending deliveries |
 | `--clean-search` | eBay searches, OAuth as needed, live exchange rates | No access | Local HTML preview only; no email/Telegram or delivery queue |
 | `--estimate-api-budget` | None | No access | Console estimate only; no token cache, log file or notifications |
+| `--find-categories "keywords"` | Taxonomy lookups, OAuth as needed | No access | Category names, paths and a configuration example on the console; no listings, reports or notifications |
 
-`--clean-search` and `--estimate-api-budget` cannot be combined.
+The three command-line modes cannot be combined.
 
 ## Search settings
 
@@ -208,6 +209,31 @@ Settings are top-level JSON fields unless shown with a dotted path. See [ebaysea
 | `exchange_rate_cache_ttl_hours` | Exchange-rate cache lifetime: **24** hours; `0` disables caching. |
 
 ### Category filters
+
+Find category IDs directly from the command line using your configured marketplaces:
+
+Linux:
+
+```bash
+.venv/bin/python fastebaysearch.py ebaysearch.json --find-categories "commodore 64"
+```
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe fastebaysearch.py ebaysearch.json --find-categories "commodore 64"
+```
+
+Example output (suggestions vary by marketplace and over time):
+
+```text
+EBAY_GB
+  Video Games & Consoles [1249] > Video Games [139973]
+```
+
+The command prints eBay's ranked suggestions and a JSON example containing the first suggestion for each successful marketplace. Choose the IDs before copying them into your configuration; you can also use a parent ID from the paths, such as `1249`. It does not change your configuration, access SQLite, fetch listings, or send notifications. It may update the OAuth token cache. Existing category filters and listing keywords do not restrict the lookup. Suggestions are not a complete category listing.
+
+Normally this uses two Taxonomy calls per marketplace, plus OAuth if needed; transient errors can add retries. These are separate from Browse calls and the Browse budget estimate. Exit codes are `0` for success (including no suggestions), `1` for an error, and `2` for rate limiting. Errors appear on the console; successful marketplaces are retained in partial output. Missing marketplaces in a copied JSON example remain unrestricted.
 
 To restrict searches to video games, add the following top-level setting:
 
@@ -243,7 +269,21 @@ For broader searches, you can optionally exclude vehicle parts with the followin
 }
 ```
 
-Find a category on the relevant country's eBay site and check its numeric category ID in the category-page URL. If the URL only contains a `bn_...` identifier, use eBay's [category information / Taxonomy API](https://developer.ebay.com/api-docs/commerce/taxonomy/overview.html) to obtain the category ID. IDs can differ between marketplaces. Add further IDs to that marketplace's list, for example `"EBAY_GB": ["131090", "15032"]` also excludes Mobile Phones & Communication. Remove a marketplace entry or use `[]` to disable its exclusions.
+To find an ID, search on the relevant country's eBay site, select a category, and check the address bar. For example, this link searches for Commodore 64 in the UK Video Games category:
+
+[https://www.ebay.co.uk/sch/i.html?_nkw=commodore+64&_sacat=139973](https://www.ebay.co.uk/sch/i.html?_nkw=commodore+64&_sacat=139973)
+
+The number after `_sacat=` is the category ID: **139973**. The `.co.uk` site corresponds to **EBAY_GB**. To search only this category, add the following top-level setting:
+
+```json
+{
+  "ebay_category_ids": {"EBAY_GB": ["139973"]}
+}
+```
+
+Some URLs put the ID in the path instead: in `https://www.ebay.co.uk/sch/139973/i.html`, it is the number between `/sch/` and `/i.html`. A `bn_...` identifier is not a category ID; if no numeric category ID is visible, use eBay's [category information / Taxonomy API](https://developer.ebay.com/develop/guides/buy/marketplace-metadata-guide).
+
+IDs can differ between marketplaces. Use `ebay_category_ids` to include categories or `ebay_exclude_category_ids` to exclude them. For example, `"EBAY_GB": ["131090", "15032"]` inside `ebay_exclude_category_ids` excludes Vehicle Parts & Accessories and Mobile Phones & Communication. Remove a marketplace entry or use `[]` to disable that setting's restriction for the marketplace.
 
 The [excludeCategoryIds filter](https://developer.ebay.com/api-docs/buy/static/ref-buy-browse-filters.html) applies to all pages and time-range searches without extending the keyword query. Check the results with `--clean-search`; miscategorised listings can still appear. Existing database records and queued notifications are not removed. Keep personal configuration and generated HTML reports out of Git.
 

@@ -8,12 +8,13 @@ import time
 from pathlib import Path
 
 from .api_budget import estimate_api_budget, format_api_budget_estimate
-from .config import ConfigError, load_config
+from .config import ConfigError, load_config, load_category_lookup_config
 from .database import Database
 from .ebay_client import EbayAuth, EbayClient
 from .logging_setup import setup_logging
 from .notifications.html_report import HtmlReportNotifier
 from .query_builder import build_queries
+from .taxonomy import TaxonomyClient, TaxonomyError, TaxonomyRateLimit, print_categories
 from .workflow import Workflow, WorkflowResult, dedupe_by_item_id, log_summary
 
 
@@ -25,7 +26,45 @@ def build_parser() -> argparse.ArgumentParser:
                       help="Estimate API usage without making API calls")
     mode.add_argument("--clean-search", action="store_true",
                       help="Search without database access; write a local HTML report")
+    mode.add_argument("--find-categories", metavar="KEYWORDS",
+                      help="Find category IDs and paths on configured eBay marketplaces")
     return parser
+
+
+def run_find_categories(config_path: Path, script_dir: Path, keywords: str) -> int:
+    import requests
+
+    if not keywords.strip():
+        print("Configuration error: --find-categories requires non-empty keywords", file=sys.stderr)
+        return 1
+    try:
+        config = load_category_lookup_config(config_path, script_dir)
+    except (ConfigError, OSError, ValueError) as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return 1
+    results = {}
+    exit_code = 0
+    try:
+        auth = EbayAuth(config.token_file, config.ebay_client_id, config.ebay_client_secret)
+        client = TaxonomyClient(auth)
+        with requests.Session() as session:
+            for site in config.ebay_sites:
+                print(f"Finding categories: {site}", file=sys.stderr, flush=True)
+                try:
+                    results[site] = client.find_categories(session, site, keywords.strip())
+                except TaxonomyRateLimit as exc:
+                    print(f"{site}: {exc}; remaining marketplaces were not queried.", file=sys.stderr)
+                    exit_code = 2
+                    break
+                except TaxonomyError as exc:
+                    print(f"{site}: {exc}", file=sys.stderr)
+                    exit_code = 1
+    except (OSError, RuntimeError, ValueError, requests.RequestException) as exc:
+        # Raw authentication/transport exceptions can contain sensitive response data.
+        print(f"Category lookup failed: {type(exc).__name__}", file=sys.stderr)
+        exit_code = 1
+    print_categories(results)
+    return exit_code
 
 
 def run_api_budget_estimate(config_path: Path, script_dir: Path) -> int:
@@ -150,6 +189,8 @@ async def run_clean_search(config_path: Path, script_dir: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     script_dir = Path(__file__).resolve().parent.parent
+    if args.find_categories is not None:
+        return run_find_categories(Path(args.config), script_dir, args.find_categories)
     if args.estimate_api_budget:
         return run_api_budget_estimate(Path(args.config), script_dir)
     if args.clean_search:
