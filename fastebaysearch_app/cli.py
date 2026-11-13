@@ -58,6 +58,7 @@ async def _make_client(config, logger):
     return EbayClient(token, logger, config.api_concurrency,
                       buying_options=config.ebay_buying_options, auth=auth,
                       search_in_description=config.ebay_search_in_description,
+                      exclude_category_ids=config.ebay_exclude_category_ids,
                       max_search_calls=config.ebay_max_search_calls_per_run)
 
 

@@ -1,3 +1,8 @@
+Unreleased
+
+- Add per-marketplace category exclusions and vehicle-parts configuration examples.
+- Disable description search in the example configuration; ignore generated HTML reports in Git.
+
 fastebaysearch 0.6.3
 
 - Follow Browse next links instead of approximate totals; split large searches by listing-start date.

@@ -9,18 +9,31 @@
     "telegram_chat_id": "CHANGE_ME",
     "telegram_send_mode": "auto",
     "telegram_disable_web_preview": false,
-    "ebay_sites": ["EBAY_GB", "EBAY_US", "EBAY_DE", "EBAY_AU", "EBAY_FR"],
-    "ebay_search_in_description": true,
+    "ebay_sites": [
+        "EBAY_GB",
+        "EBAY_US",
+        "EBAY_DE",
+        "EBAY_AU",
+        "EBAY_FR"
+    ],
+    "ebay_search_in_description": false,
     "ebay_max_search_calls_per_run": 500,
-    "ebay_buying_options": ["FIXED_PRICE", "AUCTION"],
+    "ebay_buying_options": [
+        "FIXED_PRICE",
+        "AUCTION"
+    ],
     "exclude_terms": [],
     "ebay_client_id": "CHANGE_ME",
     "ebay_client_secret": "CHANGE_ME",
     "ebay_urls_dbfile": "ebay_search_urls.db",
     "ebay_oauth_file": "oauth_token.json",
     "ebay_search_keywords": {
-        "base_terms": ["camera"],
-        "required_terms": ["canon"]
+        "base_terms": [
+            "camera"
+        ],
+        "required_terms": [
+            "canon"
+        ]
     },
     "smtp_server": "smtp.gmail.com",
     "smtp_port": "587",
@@ -36,5 +49,25 @@
     "api_concurrency": 8,
     "exchange_rate_cache_ttl_hours": 24,
     "log_to_console": false,
-    "log_max_size_mb": 10
+    "log_max_size_mb": 10,
+    "ebay_exclude_category_ids": {
+        "EBAY_GB": [
+            "131090"
+        ],
+        "EBAY_US": [
+            "6028"
+        ],
+        "EBAY_DE": [
+            "131090"
+        ],
+        "EBAY_AU": [
+            "131090"
+        ],
+        "EBAY_FR": [
+            "131090"
+        ],
+        "EBAY_IT": [
+            "131090"
+        ]
+    }
 }

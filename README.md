@@ -209,13 +209,35 @@ Settings are top-level JSON fields unless shown with a dotted path. See [ebaysea
 | --- | --- |
 | `ebay_sites` | Marketplaces such as `EBAY_GB`, `EBAY_US` and `EBAY_DE`. |
 | `ebay_buying_options` | `["FIXED_PRICE", "AUCTION"]` by default; either value alone restricts the listing format. |
-| `ebay_search_in_description` | `true`: search titles and descriptions. Set `false` for title search. Defaults to `true` when omitted. |
+| `ebay_search_in_description` | `true`: search titles and descriptions. Set `false` for title search. The example uses `false`; defaults to `true` when omitted. |
 | `ebay_search_keywords.base_terms` | Each expression generates a query on every configured marketplace. |
 | `ebay_search_keywords.required_terms` | At least one alternative must match. Use `[]` to omit the restriction. |
 | `exclude_terms` | Exclusions appended to every query. |
+| `ebay_exclude_category_ids` | Excluded category IDs per marketplace; default `{}` (no exclusions). |
 | `ebay_max_search_calls_per_run` | Shared Browse request cap, including retries: **500** per run. |
 | `api_concurrency` | Maximum concurrent Browse requests: **8**. |
 | `exchange_rate_cache_ttl_hours` | Exchange-rate cache lifetime: **24** hours; `0` disables caching. |
+
+### Excluded categories
+
+To keep description search while excluding vehicle parts, add category IDs per marketplace. The example configuration includes these optional exclusions and leaves description search disabled:
+
+```json
+{
+  "ebay_exclude_category_ids": {
+    "EBAY_GB": ["131090"],
+    "EBAY_US": ["6028"],
+    "EBAY_DE": ["131090"],
+    "EBAY_AU": ["131090"],
+    "EBAY_FR": ["131090"],
+    "EBAY_IT": ["131090"]
+  }
+}
+```
+
+Find a category on the relevant country's eBay site and check its numeric category ID in the category-page URL. If the URL only contains a `bn_...` identifier, use eBay's [category information / Taxonomy API](https://developer.ebay.com/api-docs/commerce/taxonomy/overview.html) to obtain the category ID. IDs can differ between marketplaces. Add further IDs to that marketplace's list, for example `"EBAY_GB": ["131090", "15032"]` also excludes Mobile Phones & Communication. Remove a marketplace entry or use `[]` to disable its exclusions.
+
+The [excludeCategoryIds filter](https://developer.ebay.com/api-docs/buy/static/ref-buy-browse-filters.html) applies to all pages and time-range searches without extending the keyword query. Check the results with `--clean-search`; miscategorised listings can still appear. Existing database records and queued notifications are not removed. Keep personal configuration and generated HTML reports out of Git.
 
 ### Search expressions and coverage
 

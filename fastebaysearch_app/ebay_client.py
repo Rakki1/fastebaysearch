@@ -168,7 +168,8 @@ class EbayAuth:
 class EbayClient:
     def __init__(self, token: str, logger: logging.Logger | None = None, concurrency_limit: int = 8,
                  buying_options: list[str] | None = None, auth: EbayAuth | None = None, search_in_description: bool = True,
-                 max_search_calls: int = 500):
+                 max_search_calls: int = 500, exclude_category_ids: dict[str, list[str]] | None = None):
+        self.exclude_category_ids = exclude_category_ids or {}
         self.search_in_description = search_in_description
         self.max_search_calls = max_search_calls
         self._page_semaphore = asyncio.Semaphore(max(1, int(concurrency_limit)))
@@ -288,6 +289,8 @@ class EbayClient:
                                f"itemStartDate:[{stamp(low)}..{stamp(high)}]"]
                     if self.search_in_description:
                         filters.append("searchInDescription:true")
+                    if self.exclude_category_ids.get(site):
+                        filters.append("excludeCategoryIds:{" + "|".join(self.exclude_category_ids[site]) + "}")
                     params = {"q": full_query, "limit": str(limit), "offset": str(offset),
                               "sort": "newlyListed", "filter": ",".join(filters)}
                     data = await self._get_page(session, site, params)
@@ -359,6 +362,8 @@ class EbayClient:
         self._refresh_attempted = False
         self._page_semaphore = asyncio.Semaphore(self.concurrency_limit)
         outcomes = [QueryOutcome(site, query) for site in sites for query in queries]
+        for site in sites:
+            self.logger.info("Excluded categories for %s: %s", site, self.exclude_category_ids.get(site, []))
 
         async def guarded_search(session, outcome):
             if not self._rate_limited.is_set():

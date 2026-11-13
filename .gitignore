@@ -8,6 +8,7 @@
 /.env.*
 
 # Runtime data
+ebay_report_*.html
 *.db
 *.db-*
 *.sqlite
