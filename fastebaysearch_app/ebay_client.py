@@ -168,8 +168,10 @@ class EbayAuth:
 class EbayClient:
     def __init__(self, token: str, logger: logging.Logger | None = None, concurrency_limit: int = 8,
                  buying_options: list[str] | None = None, auth: EbayAuth | None = None, search_in_description: bool = True,
-                 max_search_calls: int = 500, exclude_category_ids: dict[str, list[str]] | None = None):
+                 max_search_calls: int = 500, exclude_category_ids: dict[str, list[str]] | None = None,
+                 category_ids: dict[str, list[str]] | None = None):
         self.exclude_category_ids = exclude_category_ids or {}
+        self.category_ids = category_ids or {}
         self.search_in_description = search_in_description
         self.max_search_calls = max_search_calls
         self._page_semaphore = asyncio.Semaphore(max(1, int(concurrency_limit)))
@@ -293,7 +295,12 @@ class EbayClient:
                         filters.append("excludeCategoryIds:{" + "|".join(self.exclude_category_ids[site]) + "}")
                     params = {"q": full_query, "limit": str(limit), "offset": str(offset),
                               "sort": "newlyListed", "filter": ",".join(filters)}
+                    if outcome.category_id:
+                        params["category_ids"] = outcome.category_id
                     data = await self._get_page(session, site, params)
+                    if outcome.category_id and any(str(w.get("errorId")) == "12009"
+                                                   for w in data.get("warnings", []) if isinstance(w, dict)):
+                        raise SearchRequestError("Invalid category_ids (eBay warning 12009); unrestricted results discarded")
                     if "total" not in data and "itemSummaries" not in data:
                         raise SearchRequestError("Missing search results")
                     items = data.get("itemSummaries", [])
@@ -361,8 +368,11 @@ class EbayClient:
         self._refresh_lock = asyncio.Lock()
         self._refresh_attempted = False
         self._page_semaphore = asyncio.Semaphore(self.concurrency_limit)
-        outcomes = [QueryOutcome(site, query) for site in sites for query in queries]
+        outcomes = [QueryOutcome(site, query, category_id=category)
+                    for site in sites for query in queries
+                    for category in (self.category_ids.get(site) or [None])]
         for site in sites:
+            self.logger.info("Included categories for %s: %s", site, self.category_ids.get(site, []))
             self.logger.info("Excluded categories for %s: %s", site, self.exclude_category_ids.get(site, []))
 
         async def guarded_search(session, outcome):
@@ -392,7 +402,7 @@ class EbayClient:
             run.items.extend(replace(item, source_site=outcome.site) for item in
                              parse_search_results(outcome.query.base_name, outcome.raw_items, rates, self.logger))
             log = self.logger.info if outcome.status == "success" else self.logger.warning
-            log("Search %s: %s query=%r pages=%s reported=%s fetched=%s reason=%s",
-                outcome.status, outcome.site, outcome.query.keywords, outcome.pages,
+            log("Search %s: %s category=%s query=%r pages=%s reported=%s fetched=%s reason=%s",
+                outcome.status, outcome.site, outcome.category_id or "all", outcome.query.keywords, outcome.pages,
                 outcome.total, len(outcome.raw_items), outcome.error)
         return run

@@ -213,12 +213,32 @@ Settings are top-level JSON fields unless shown with a dotted path. See [ebaysea
 | `ebay_search_keywords.base_terms` | Each expression generates a query on every configured marketplace. |
 | `ebay_search_keywords.required_terms` | At least one alternative must match. Use `[]` to omit the restriction. |
 | `exclude_terms` | Exclusions appended to every query. |
+| `ebay_category_ids` | Search only these category IDs per marketplace; default `{}` (all categories). |
 | `ebay_exclude_category_ids` | Excluded category IDs per marketplace; default `{}` (no exclusions). |
 | `ebay_max_search_calls_per_run` | Shared Browse request cap, including retries: **500** per run. |
 | `api_concurrency` | Maximum concurrent Browse requests: **8**. |
 | `exchange_rate_cache_ttl_hours` | Exchange-rate cache lifetime: **24** hours; `0` disables caching. |
 
-### Excluded categories
+### Category filters
+
+To restrict searches to video games, add the following top-level setting:
+
+```json
+{
+  "ebay_category_ids": {
+    "EBAY_GB": ["139973"],
+    "EBAY_US": ["139973"],
+    "EBAY_DE": ["139973"],
+    "EBAY_AU": ["139973"],
+    "EBAY_FR": ["139973"],
+    "EBAY_IT": ["139973"]
+  }
+}
+```
+
+`139973` is Video Games on these six marketplaces; it includes modern games too, so keep your C64/game keywords. Optionally add `"4193"` (Other Vintage Computing) to find listings outside Video Games, at the cost of broader results. Misclassified games outside the selected categories will be missed. The generic example configuration leaves this restriction disabled.
+
+eBay's [category_ids parameter](https://developer.ebay.com/develop/api/buy/browse_api/item/search) accepts one category per request. Multiple configured IDs are searched separately and duplicate item IDs are merged before delivery. With 13 queries and six marketplaces, one category requires at least 78 Browse calls; two require 156. Pagination and retries add calls, within the shared per-run cap. The budget estimate includes these category searches. Logs identify each category; an invalid-category API warning fails that search instead of accepting unrestricted results. Missing marketplace entries or `[]` mean all categories.
 
 To keep description search while excluding vehicle parts, add category IDs per marketplace. The example configuration includes these optional exclusions and leaves description search disabled:
 

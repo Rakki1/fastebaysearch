@@ -1,5 +1,6 @@
 Unreleased
 
+- Add per-marketplace included categories, separate category searches, and category-aware API budget estimates.
 - Add per-marketplace category exclusions and vehicle-parts configuration examples.
 - Disable description search in the example configuration; ignore generated HTML reports in Git.
 

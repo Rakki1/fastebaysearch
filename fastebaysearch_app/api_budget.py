@@ -35,10 +35,11 @@ def estimate_api_budget(
     estimated_results_per_query: int = 200,
     search_limit: int = DEFAULT_SEARCH_LIMIT,
     max_search_calls: int = 500,
+    category_ids: dict[str, list[str]] | None = None,
 ) -> ApiBudgetEstimate:
     sites_count = len(ebay_sites)
     queries_count = len(queries)
-    combinations = sites_count * queries_count
+    combinations = sum(max(1, len((category_ids or {}).get(site, []))) for site in ebay_sites) * queries_count
     safe_daily_limit = math.floor(max(0, daily_api_limit) * max(0, min(100, safety_percent)) / 100)
 
     estimated_pages = _estimated_pages_per_query(estimated_results_per_query, search_limit)

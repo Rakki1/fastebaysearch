@@ -70,21 +70,22 @@ class AppConfig:
     ebay_search_in_description: bool = True
     ebay_max_search_calls_per_run: int = 500
     ebay_exclude_category_ids: dict[str, list[str]] = field(default_factory=dict)
+    ebay_category_ids: dict[str, list[str]] = field(default_factory=dict)
     ebay_buying_options: list[str] = field(default_factory=lambda: ["FIXED_PRICE", "AUCTION"])
 
 
-def parse_excluded_categories(value: object) -> dict[str, list[str]]:
+def parse_category_ids(value: object, setting: str) -> dict[str, list[str]]:
     if not isinstance(value, dict):
-        raise ConfigError("ebay_exclude_category_ids must be an object mapping marketplaces to lists")
+        raise ConfigError(f"{setting} must be an object mapping marketplaces to lists")
     result = {}
     for site, ids in value.items():
         if not isinstance(site, str) or not re.fullmatch(r"EBAY_[A-Z]+", site) or not isinstance(ids, list):
-            raise ConfigError("ebay_exclude_category_ids requires marketplace keys and category ID lists")
+            raise ConfigError(f"{setting} requires marketplace keys and category ID lists")
         normalized = []
         for category in ids:
             if (type(category) not in (int, str)
                     or not re.fullmatch(r"[0-9]+", str(category)) or int(category) <= 0):
-                raise ConfigError(f"ebay_exclude_category_ids[{site}] must contain positive category IDs")
+                raise ConfigError(f"{setting}[{site}] must contain positive category IDs")
             category = str(int(category))
             if category not in normalized:
                 normalized.append(category)
@@ -189,7 +190,8 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
             or any(option not in ("FIXED_PRICE", "AUCTION") for option in buying_options)):
         raise ConfigError("ebay_buying_options must be a non-empty list of FIXED_PRICE and/or AUCTION")
     buying_options = list(dict.fromkeys(buying_options))
-    excluded_categories = parse_excluded_categories(raw.get("ebay_exclude_category_ids", {}))
+    excluded_categories = parse_category_ids(raw.get("ebay_exclude_category_ids", {}), "ebay_exclude_category_ids")
+    categories = parse_category_ids(raw.get("ebay_category_ids", {}), "ebay_category_ids")
 
     use_email = as_bool(raw.get("use_email"), True)
     email = None
@@ -242,6 +244,7 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
         ebay_sites=ebay_sites,
         ebay_buying_options=buying_options,
         ebay_exclude_category_ids=excluded_categories,
+        ebay_category_ids=categories,
         ebay_search_in_description=as_bool(raw.get("ebay_search_in_description"), True),
         ebay_max_search_calls_per_run=parse_int(raw.get("ebay_max_search_calls_per_run"), "ebay_max_search_calls_per_run", 500, minimum=1),
         exclude_terms=normalize_terms(raw.get("exclude_terms")),

@@ -45,6 +45,7 @@ class QueryOutcome:
     pages: int = 0
     total: int | None = None
     error: str = ""
+    category_id: str | None = None
 
 
 @dataclass
@@ -64,5 +65,5 @@ class SearchRun:
                   for status in ("success", "failed", "truncated", "rate_limited", "cancelled")}
         state = "PARTIAL SEARCH" if self.exit_code else "Search complete"
         return state + ": " + ", ".join(f"{status}={count}" for status, count in counts.items()) + "".join(
-            f"\n{o.site} {o.query.keywords}: {o.status} {o.error}"
+            f"\n{o.site}{' category=' + o.category_id if o.category_id else ''} {o.query.keywords}: {o.status} {o.error}"
             for o in self.outcomes if o.status != "success")

@@ -17,6 +17,7 @@
         "EBAY_FR"
     ],
     "ebay_search_in_description": false,
+    "ebay_category_ids": {},
     "ebay_max_search_calls_per_run": 500,
     "ebay_buying_options": [
         "FIXED_PRICE",
