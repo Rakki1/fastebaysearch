@@ -275,7 +275,9 @@ Search terms separated by spaces retain eBay's AND semantics. For example, base 
 
 Every complete query, including all exclusions, must fit within eBay's 100-character limit. An overlong query is rejected with its base term, full text and length before logging, database access or API calls. This applies to normal runs, clean searches and budget estimates. Shorten the terms or split the configuration; no exclusions are silently discarded.
 
-Searches use `sort=newlyListed` and fetch up to 10,000 items per marketplace/query. If more results exist, the run is marked partial and logs the affected query and fetched/reported counts. Narrow broad searches to improve coverage. Newest-first sorting cannot guarantee complete coverage beyond this API limit. Auction-only listings use the current bid amount, labelled `Current bid`; missing prices are displayed as `Price unavailable`.
+Searches use `sort=newlyListed`, with pagination driven by the API's `next` link rather than its approximate `total`. Searches reaching 10,000 results are automatically split into overlapping listing-start time intervals; duplicate item IDs are merged. Each run fixes its upper time boundary at startup and processes newer intervals first. All configured searches share `ebay_max_search_calls_per_run` (default **500**), including retries and authentication replays of Browse requests. OAuth and exchange-rate requests are separate. A budget stop or an unsplittable interval is reported as `truncated`; received results are retained. Each run starts afresh rather than resuming old partitions. Live inventory changes and the call cap mean exhaustive coverage is not guaranteed.
+
+`ebay_search_in_description` defaults to `true`, enabling title-and-description search. Set it to `false` to retain title search. `required_terms` still requires at least one listed alternative; `exclude_terms` still applies. Description searches can find bundles and listings whose titles omit the desired item, but may also return more irrelevant matches. Auction-only listings use the current bid amount labelled `Current bid`; missing prices display `Price unavailable`.
 
 HTTP 500/502/503/504, connection failures and timeouts receive up to two retries of the affected page, after 1 and 2 seconds. Concurrent HTTP 401 failures share at most one forced token refresh per run. Other permanent HTTP errors are not retried. HTTP 429 stops further searches and cancels outstanding requests. Results already received are still saved and delivered. Each query's outcome and overall completeness appear in the log; reports and notification summaries identify partial searches. A channel failure does not prevent the other notification channels from running.
 
@@ -368,3 +370,20 @@ Windows PowerShell:
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m pytest -q
 ```
+
+
+## Changed listings and empty-run alerts
+
+Seen listings are refreshed on every observation. A separate durable event queue reports fixed purchase-price decreases and changes between AUCTION and FIXED_PRICE. Bid changes, title edits and currency-conversion changes do not trigger alerts. Price comparisons require the same currency and source marketplace. Responses from the listing's own marketplace take priority; otherwise the first configured marketplace wins.
+
+The first observation after upgrading establishes a structured comparison baseline without replaying old listings. A channel that has not yet delivered the first listing receives the latest details in that initial notification. Events for already notified listings retain old/new values and delivery state independently per channel. New and changed listings share each channel's existing per-run item limit; oldest pending entries are selected first. Telegram changes use the existing three-attempt, six-hour retry policy.
+
+Every partial or failed search run sends one summary per enabled channel even with no pending listings. HTML writes a status-only report when necessary. Successful empty runs remain silent. Telegram truncates long diagnostic details with a pointer to the log. Channel failures do not block other channels.
+
+### Upgrading to 0.6.3
+
+These changes are included in [release 0.6.3](https://github.com/Rakki1/fastebaysearch/releases/tag/v0.6.3).
+
+Stop the scheduler and back up SQLite before deployment. Startup adds observation, change-event and per-channel delivery tables transactionally; existing listing and delivery history remains in place. Keep the backup for rollback. Broader description searches may produce many new listings on the first upgraded run.
+
+The 500-call cap is **per run**, not a daily quota controller. Re-evaluate the schedule using `--estimate-api-budget`; automatic time partitions can consume more calls than the normal estimate. A partial run should prompt a review of the log, search scope and scheduling before increasing the cap.

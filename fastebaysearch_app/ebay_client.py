@@ -7,6 +7,10 @@ import logging
 import math
 import time
 from pathlib import Path
+from datetime import datetime, timezone
+from dataclasses import replace
+from urllib.parse import urlparse, parse_qs
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from .ebay_urls import build_item_web_url
@@ -19,6 +23,18 @@ EXCHANGE_RATE_URL = "https://api.frankfurter.app/latest?base=EUR&symbols=USD,GBP
 EBAY_MAX_OFFSET = 9999
 SEARCH_RETRIES = 2
 TRANSIENT_STATUSES = {500, 502, 503, 504}
+
+
+class BudgetError(Exception):
+    pass
+
+
+def amount(data):
+    try:
+        value = Decimal(str(data.get("value")))
+        return str(value) if value.is_finite() and value >= 0 else ""
+    except (AttributeError, InvalidOperation):
+        return ""
 
 
 class RateLimitError(Exception):
@@ -82,6 +98,11 @@ def parse_search_results(base_name: str, raw_items: list[Any], rates: dict[str, 
                 starts=format_date(item.get("itemCreationDate"), logger),
                 ends=format_date(item.get("itemEndDate"), logger),
                 image=image_url,
+                buying_options=tuple(sorted(item.get("buyingOptions") or [])),
+                fixed_amount=amount(item.get("price")),
+                fixed_currency=(item.get("price") if isinstance(item.get("price"), dict) else {}).get("currency", ""),
+                bid_amount=amount(item.get("currentBidPrice")),
+                bid_currency=(item.get("currentBidPrice") if isinstance(item.get("currentBidPrice"), dict) else {}).get("currency", ""),
             )
         )
     return results
@@ -146,7 +167,13 @@ class EbayAuth:
 
 class EbayClient:
     def __init__(self, token: str, logger: logging.Logger | None = None, concurrency_limit: int = 8,
-                 buying_options: list[str] | None = None, auth: EbayAuth | None = None):
+                 buying_options: list[str] | None = None, auth: EbayAuth | None = None, search_in_description: bool = True,
+                 max_search_calls: int = 500):
+        self.search_in_description = search_in_description
+        self.max_search_calls = max_search_calls
+        self._page_semaphore = asyncio.Semaphore(max(1, int(concurrency_limit)))
+        self.search_calls = 0
+        self.run_end = int(datetime.now(timezone.utc).timestamp() * 1000)
         self.token = token
         self.logger = logger or logging.getLogger("fastebaysearch")
         self.concurrency_limit = max(1, int(concurrency_limit))
@@ -189,6 +216,10 @@ class EbayClient:
             return True
 
     async def _get_page(self, session, site: str, params: dict[str, str]) -> dict[str, Any]:
+        async with self._page_semaphore:
+            return await self._request_page(session, site, params)
+
+    async def _request_page(self, session, site: str, params: dict[str, str]) -> dict[str, Any]:
         import aiohttp
 
         retries = 0
@@ -196,6 +227,9 @@ class EbayClient:
         while True:
             if self._rate_limited.is_set():
                 raise asyncio.CancelledError
+            if self.search_calls >= self.max_search_calls:
+                raise BudgetError("Browse call budget exhausted")
+            self.search_calls += 1
             generation = self._token_generation
             headers = {"Authorization": f"Bearer {self.token}",
                        "X-EBAY-C-MARKETPLACE-ID": site, "Accept": "application/json"}
@@ -239,32 +273,69 @@ class EbayClient:
             raise ValueError("Search page limit must be between 1 and 200")
         if outcome is None:
             outcome = QueryOutcome(site, SearchQuery(full_query, full_query))
-        offset = 0
+        def stamp(ms):
+            return datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+        intervals = [(788918400000, self.run_end)]
+        incomplete = False
+        seen = set()
         try:
-            while True:
-                params = {"q": full_query, "limit": str(limit), "offset": str(offset),
-                          "sort": "newlyListed",
-                          "filter": "buyingOptions:{" + "|".join(self.buying_options) + "}"}
-                data = await self._get_page(session, site, params)
-                total = data.get("total")
-                items = data.get("itemSummaries", [])
-                if (type(total) is not int or total < 0 or not isinstance(items, list)
-                        or len(items) > limit or any(not isinstance(item, dict) for item in items)):
-                    raise SearchRequestError("Invalid total or itemSummaries in response")
-                outcome.total = total
-                remaining = EBAY_MAX_OFFSET + 1 - len(outcome.raw_items)
-                outcome.raw_items.extend(items[:remaining])
-                outcome.pages += 1
-                if total <= offset + min(len(items), remaining):
-                    outcome.status = "success"
-                    break
-                if offset + limit > EBAY_MAX_OFFSET or len(outcome.raw_items) >= EBAY_MAX_OFFSET + 1:
-                    outcome.status = "truncated"
-                    outcome.error = "10,000 item limit reached; narrow this search"
-                    break
-                if len(items) < limit:
-                    raise SearchRequestError("Incomplete page before reported total was reached")
-                offset += limit
+            while intervals:
+                low, high = intervals.pop()
+                offset = 0
+                while True:
+                    filters = ["buyingOptions:{" + "|".join(self.buying_options) + "}",
+                               f"itemStartDate:[{stamp(low)}..{stamp(high)}]"]
+                    if self.search_in_description:
+                        filters.append("searchInDescription:true")
+                    params = {"q": full_query, "limit": str(limit), "offset": str(offset),
+                              "sort": "newlyListed", "filter": ",".join(filters)}
+                    data = await self._get_page(session, site, params)
+                    if "total" not in data and "itemSummaries" not in data:
+                        raise SearchRequestError("Missing search results")
+                    items = data.get("itemSummaries", [])
+                    total = data.get("total")
+                    if not isinstance(items, list) or len(items) > limit or any(not isinstance(i, dict) for i in items):
+                        raise SearchRequestError("Invalid itemSummaries")
+                    if total is not None and (type(total) is not int or total < 0):
+                        raise SearchRequestError("Invalid total")
+                    outcome.total = total
+                    outcome.pages += 1
+                    for item in items:
+                        key = item.get("itemId") or item.get("legacyItemId")
+                        if key not in seen:
+                            seen.add(key)
+                            outcome.raw_items.append(item)
+                    split = (total is not None and total > 10000) or offset + len(items) >= 10000
+                    if split:
+                        if high - low <= 1:
+                            incomplete = True
+                        else:
+                            mid = (low + high) // 2
+                            intervals.extend([(low, mid), (mid, high)])
+                        break
+                    link = data.get("next")
+                    if not link:
+                        break
+                    parsed = urlparse(link)
+                    query = parse_qs(parsed.query)
+                    try:
+                        next_offset = int(query["offset"][0])
+                    except (ValueError, KeyError, IndexError):
+                        raise SearchRequestError("Invalid next offset") from None
+                    if (parsed.scheme != "https" or parsed.netloc != "api.ebay.com"
+                            or parsed.path != "/buy/browse/v1/item_summary/search"
+                            or next_offset <= offset or next_offset % limit or next_offset > 9999):
+                        raise SearchRequestError("Invalid next link")
+                    offset = next_offset
+                    await asyncio.sleep(0)
+                await asyncio.sleep(0)
+            outcome.status = "truncated" if incomplete else "success"
+            if incomplete:
+                outcome.error = "Unsplittable time interval reached the result cap"
+        except BudgetError as exc:
+            outcome.status = "truncated"
+            outcome.error = str(exc)
         except RateLimitError:
             outcome.status = "rate_limited"
             outcome.error = "HTTP 429"
@@ -281,21 +352,22 @@ class EbayClient:
     async def run_queries(self, sites: list[str], queries: list[SearchQuery], rates: dict[str, float]) -> SearchRun:
         import aiohttp
 
+        self.search_calls = 0
+        self.run_end = int(datetime.now(timezone.utc).timestamp() * 1000)
         self._rate_limited = asyncio.Event()
         self._refresh_lock = asyncio.Lock()
         self._refresh_attempted = False
-        semaphore = asyncio.Semaphore(self.concurrency_limit)
+        self._page_semaphore = asyncio.Semaphore(self.concurrency_limit)
         outcomes = [QueryOutcome(site, query) for site in sites for query in queries]
 
         async def guarded_search(session, outcome):
-            async with semaphore:
-                if not self._rate_limited.is_set():
-                    try:
-                        await self._search_with_session(session, outcome.site, outcome.query.keywords, outcome=outcome)
-                    except asyncio.CancelledError:
-                        # A rate-limit cancellation is a recorded outcome, not cancellation of the caller.
-                        if not self._rate_limited.is_set():
-                            raise
+            if not self._rate_limited.is_set():
+                try:
+                    await self._search_with_session(session, outcome.site, outcome.query.keywords, outcome=outcome)
+                except asyncio.CancelledError:
+                    # A rate-limit cancellation is a recorded outcome, not cancellation of the caller.
+                    if not self._rate_limited.is_set():
+                        raise
 
         async with aiohttp.ClientSession() as session:
             tasks = [asyncio.create_task(guarded_search(session, outcome)) for outcome in outcomes]
@@ -312,7 +384,8 @@ class EbayClient:
 
         run = SearchRun(outcomes=outcomes)
         for outcome in outcomes:
-            run.items.extend(parse_search_results(outcome.query.base_name, outcome.raw_items, rates, self.logger))
+            run.items.extend(replace(item, source_site=outcome.site) for item in
+                             parse_search_results(outcome.query.base_name, outcome.raw_items, rates, self.logger))
             log = self.logger.info if outcome.status == "success" else self.logger.warning
             log("Search %s: %s query=%r pages=%s reported=%s fetched=%s reason=%s",
                 outcome.status, outcome.site, outcome.query.keywords, outcome.pages,

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .models import SearchResult
+from . import change_tracking
 from .utils import utc_now_str
 
 SQLITE_VARIABLE_LIMIT = 900
@@ -83,6 +84,7 @@ class Database:
                 """
             )
             self._ensure_ebayids_columns(cur)
+            change_tracking.migrate(cur)
             _execute_schema_statements(cur,
                 """
                 CREATE INDEX IF NOT EXISTS idx_item_id ON ebayids (item_id);
@@ -143,7 +145,7 @@ class Database:
         if not results:
             return []
 
-        insert_time = utc_now_str()
+        insert_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")
         unique_results: list[SearchResult] = []
         seen_item_ids: set[str] = set()
         for result in results:
@@ -185,6 +187,7 @@ class Database:
                     for result in inserted
                 ],
             )
+            change_tracking.observe(cur, unique_results, {i.item_id for i in inserted}, enqueue_html)
             if enqueue_html:
                 cur.executemany(
                     "INSERT INTO html_notifications (item_id, queued_at) VALUES (?, ?);",
@@ -209,12 +212,12 @@ class Database:
                 ORDER BY h.queued_at, e.id LIMIT ?;
                 """, (max(1, int(limit)),),
             ).fetchall()
-            pending = [_search_result_from_row(row) for row in rows]
+            pending = change_tracking.pending(conn, "html", [_search_result_from_row(row) for row in rows], limit)
             if not pending:
-                return True
+                return notifier.send_status(run_summary, person_name) if "PARTIAL SEARCH" in run_summary else True
             try:
                 sent = notifier.send(pending, person_name, run_summary=run_summary)
-                sent_ids = {result.item_id for result in sent}
+                sent_ids = {result.notification_key for result in sent}
             except Exception as exc:
                 self.logger.error("HTML report notification failed: %s", type(exc).__name__)
                 sent_ids = set()
@@ -223,16 +226,18 @@ class Database:
             conn.executemany(
                 """UPDATE html_notifications
                    SET delivered_at = ?, report_path = ?, last_error = ? WHERE item_id = ?;""",
-                [(now if result.item_id in sent_ids else None,
-                  str(path) if path is not None and result.item_id in sent_ids else None,
-                  None if result.item_id in sent_ids else "HTML report write failed",
-                  result.item_id) for result in pending],
+                [(now if result.notification_key in sent_ids else None,
+                  str(path) if path is not None and result.notification_key in sent_ids else None,
+                  None if result.notification_key in sent_ids else "HTML report write failed",
+                  result.item_id) for result in pending if not result.event_id],
             )
+            for item in pending:
+                change_tracking.mark(conn, "html", [item], now if item.notification_key in sent_ids else None, None if item.notification_key in sent_ids else "HTML write failed")
             remaining = conn.execute(
                 "SELECT COUNT(*) FROM html_notifications WHERE delivered_at IS NULL;"
             ).fetchone()[0]
             self.logger.info("HTML queue: delivered=%s pending=%s", len(sent_ids), remaining)
-            return all(result.item_id in sent_ids for result in pending)
+            return all(result.notification_key in sent_ids for result in pending)
 
     def pending_email_notifications(self, limit: int | None = None) -> list[SearchResult]:
         return self._pending_channel_notifications("email_notified_at", limit)
@@ -283,15 +288,18 @@ class Database:
                 """,
                 [(now, item_id) for item_id in item_ids],
             )
+            selected = change_tracking.pending(conn, "telegram", [_search_result_from_row(row) for row in rows], limit,
+                                               claim=True, retry_after_hours=retry_after_hours, max_attempts=max_attempts)
             conn.commit()
 
-        return [_search_result_from_row(row) for row in rows]
+        return selected
 
     def release_telegram_claims(self, results: list[SearchResult], error: str) -> None:
         if not results:
             return
 
         with self.connect() as conn:
+            change_tracking.mark(conn, "telegram", results, None, error, release=True)
             conn.executemany(
                 """
                 UPDATE ebayids
@@ -304,7 +312,7 @@ class Database:
                 WHERE item_id = ?
                   AND telegram_notified_at IS NULL;
                 """,
-                [(error, result.item_id) for result in results],
+                [(error, result.item_id) for result in results if not result.event_id],
             )
             conn.commit()
 
@@ -325,8 +333,7 @@ class Database:
         """
         with self.connect() as conn:
             rows = conn.execute(query, params).fetchall()
-
-        return [_search_result_from_row(row) for row in rows]
+            return change_tracking.pending(conn, notified_column.split("_")[0], [_search_result_from_row(row) for row in rows], limit)
 
     def mark_email_succeeded(self, results: list[SearchResult]) -> None:
         self._mark_channel(results, "email_notified_at", "email_error", utc_now_str(), None)
@@ -355,8 +362,9 @@ class Database:
         if error_column not in {"email_error", "telegram_error"}:
             raise ValueError(f"Invalid notification error column: {error_column}")
 
-        item_ids = [result.item_id for result in results]
+        item_ids = [result.item_id for result in results if not result.event_id]
         with self.connect() as conn:
+            change_tracking.mark(conn, notified_column.split("_")[0], results, notified_at, error)
             conn.executemany(
                 f"UPDATE ebayids SET {notified_column} = ?, {error_column} = ? WHERE item_id = ?;",
                 [(notified_at, error, item_id) for item_id in item_ids],

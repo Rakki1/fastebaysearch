@@ -34,6 +34,7 @@ def estimate_api_budget(
     safety_percent: int = 90,
     estimated_results_per_query: int = 200,
     search_limit: int = DEFAULT_SEARCH_LIMIT,
+    max_search_calls: int = 500,
 ) -> ApiBudgetEstimate:
     sites_count = len(ebay_sites)
     queries_count = len(queries)
@@ -58,7 +59,7 @@ def estimate_api_budget(
         calls_per_run_estimated=calls_estimated,
         # Two transient retries per page plus one 401 replay per search in flight.
         calls_per_run_with_retries=calls_estimated * (1 + SEARCH_RETRIES) + combinations,
-        calls_per_run_maximum=combinations * (EBAY_MAX_OFFSET // search_limit + 1) * (1 + SEARCH_RETRIES) + combinations,
+        calls_per_run_maximum=max_search_calls,
         daily_api_limit=max(0, int(daily_api_limit)),
         safe_daily_api_limit=safe_daily_limit,
         possible_runs_per_day_minimum=runs_minimum,
@@ -84,13 +85,14 @@ def format_api_budget_estimate(estimate: ApiBudgetEstimate) -> str:
             f"API calls per run, minimum: {estimate.calls_per_run_minimum}",
             f"API calls per run, estimated: {estimate.calls_per_run_estimated}",
             f"Browse calls for estimated pages including retry allowance: {estimate.calls_per_run_with_retries}",
-            f"Maximum Browse calls at the result cap including retries: {estimate.calls_per_run_maximum}",
+            f"Configured Browse call cap per run including retries: {estimate.calls_per_run_maximum}",
             "OAuth calls (separate from Browse): 0-2 per run (initial token and one forced refresh)",
             f"Daily API limit: {estimate.daily_api_limit}",
             f"Safe daily limit: {estimate.safe_daily_api_limit}",
             f"Possible runs per day, minimum: {estimate.possible_runs_per_day_minimum}",
             f"Possible runs per day, estimated: {estimate.possible_runs_per_day_estimated}",
             f"Recommended cron interval: {interval}",
+            "Automatic time partitions add calls beyond the normal estimate. The per-run cap does not enforce a daily quota.",
             "The interval uses the normal estimate, not the retry allowance or the maximum result count.",
         ]
     )

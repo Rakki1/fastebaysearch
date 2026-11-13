@@ -22,6 +22,18 @@ class SearchResult:
     starts: str
     ends: str
     image: str = ""
+    buying_options: tuple[str, ...] = ()
+    fixed_amount: str = ""
+    fixed_currency: str = ""
+    bid_amount: str = ""
+    bid_currency: str = ""
+    source_site: str = ""
+    event_id: int = 0
+    change_description: str = ""
+
+    @property
+    def notification_key(self):
+        return (self.item_id, self.event_id)
 
 
 @dataclass
@@ -51,4 +63,6 @@ class SearchRun:
         counts = {status: sum(o.status == status for o in self.outcomes)
                   for status in ("success", "failed", "truncated", "rate_limited", "cancelled")}
         state = "PARTIAL SEARCH" if self.exit_code else "Search complete"
-        return state + ": " + ", ".join(f"{status}={count}" for status, count in counts.items())
+        return state + ": " + ", ".join(f"{status}={count}" for status, count in counts.items()) + "".join(
+            f"\n{o.site} {o.query.keywords}: {o.status} {o.error}"
+            for o in self.outcomes if o.status != "success")

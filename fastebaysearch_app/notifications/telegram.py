@@ -11,12 +11,15 @@ from ..utils import safe_url
 
 
 def build_caption(result: SearchResult) -> str:
+    heading = "Updated listing" if result.event_id else "New listing!"
     name = html.escape(result.name)
+    if result.event_id:
+        name = "Updated listing: " + html.escape(result.change_description) + "\n" + name
     price = html.escape(result.price)
     keywords = html.escape(result.keywords)
     link = html.escape(safe_url(result.link), quote=True)
     return (
-        f"⭐ <b>New listing!</b>\n"
+        f"⭐ <b>{heading}</b>\n"
         f"📦 {name}\n"
         f"💰 {price}\n"
         f"🔍 <i>Search: {keywords}</i>\n"
@@ -31,10 +34,21 @@ class TelegramNotifier:
         self.sleep_seconds = sleep_seconds
 
     async def send_header(self, count: int, run_summary: str = "") -> bool:
-        import aiohttp
+        return await self._send_text(self._header_text(count, run_summary))
 
-        text = (f"<b>SEARCH REPORT ({datetime.now().strftime('%d.%m. at %H:%M')})</b>\n"
-                f"{html.escape(run_summary)}\n<b>{count}</b> items awaiting notification")
+    async def send_status(self, summary: str) -> bool:
+        return await self._send_text("<b>PARTIAL SEARCH</b>\n" + html.escape(summary[:1800]) + "\nSee log for details.")
+
+    def _header_text(self, count, run_summary):
+        run_summary = run_summary[:1800] + ("\nSee log for details." if len(run_summary) > 1800 else "")
+        text = f"<b>SEARCH REPORT ({datetime.now().strftime('%d.%m. at %H:%M')})</b>\n"
+        if run_summary:
+            text += f"{html.escape(run_summary)}\n"
+        text += f"<b>{count}</b> items awaiting notification"
+        return text
+
+    async def _send_text(self, text):
+        import aiohttp
         url = f"https://api.telegram.org/bot{self.config.token}/sendMessage"
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
             try:

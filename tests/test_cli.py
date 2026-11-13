@@ -43,7 +43,7 @@ class FakeEbayAuth:
 class FakeEbayClient:
     instances = []
 
-    def __init__(self, token, logger, concurrency_limit, buying_options=None, auth=None):
+    def __init__(self, token, logger, concurrency_limit, buying_options=None, auth=None, **kwargs):
         self.token = token
         self.logger = logger
         self.concurrency_limit = concurrency_limit

@@ -1,6 +1,8 @@
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from fastebaysearch_app.config import AppConfig, EmailConfig, SearchConfig, TelegramConfig
 from fastebaysearch_app.models import SearchQuery, SearchResult, SearchRun
 from fastebaysearch_app.workflow import Workflow
@@ -296,20 +298,26 @@ def test_telegram_exception_does_not_block_email_and_marks_failure(caplog):
     assert "TEST-SECRET" not in caplog.text
 
 
-def test_partial_search_summary_reaches_email_and_telegram():
+@pytest.mark.parametrize("status,exit_code", [
+    ("success", 0), ("failed", 1), ("truncated", 1), ("rate_limited", 2), ("cancelled", 1),
+])
+def test_search_summary_reaches_notifications_only_as_needed(status, exit_code):
     from fastebaysearch_app.models import QueryOutcome
     summaries = []
 
     class Client(FakeEbayClient):
         async def run_queries(self, *args):
             run = await super().run_queries(*args)
-            run.outcomes = [QueryOutcome("EBAY_GB", SearchQuery("camera", "camera"), status="failed")]
+            run.outcomes = [QueryOutcome("EBAY_GB", SearchQuery("camera", "camera"), status=status)]
             return run
 
     class Telegram(FakeTelegramNotifier):
         async def send_header(self, count, run_summary=""):
             summaries.append(run_summary)
             return True
+
+        async def send(self, results):
+            return results
 
     class Email(FakeEmailNotifier):
         def send(self, results, run_summary=""):
@@ -318,9 +326,13 @@ def test_partial_search_summary_reaches_email_and_telegram():
 
     result = asyncio.run(Workflow(make_config(), FakeDatabase(), Client(), [],
                                  telegram_notifier=Telegram(), email_notifier=Email()).run())
-    assert result.exit_code == 1
-    assert len(summaries) == 2
-    assert all("PARTIAL SEARCH" in summary for summary in summaries)
+    assert result.exit_code == exit_code
+    if status == "success":
+        assert summaries == ["", "Search complete"]
+    else:
+        assert summaries == [result.search_run.summary, result.search_run.summary]
+        assert "PARTIAL SEARCH" in summaries[0]
+        assert f"{status}=1" in summaries[0]
 
 
 def test_html_failure_returns_error_with_other_channels_disabled():

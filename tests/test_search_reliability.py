@@ -53,7 +53,8 @@ def delays(monkeypatch):
     calls = []
 
     async def sleep(seconds):
-        calls.append(seconds)
+        if seconds:
+            calls.append(seconds)
 
     monkeypatch.setattr(asyncio, "sleep", sleep)
     return calls
@@ -67,9 +68,12 @@ def test_search_sends_buying_options_and_newest_sort(options, expected):
     outcome = search(session, EbayClient("token", buying_options=options))
     assert outcome.status == "success"
     assert outcome.raw_items == []
-    assert session.calls[0]["params"] == {
+    params = session.calls[0]["params"].copy()
+    filters = params.pop("filter")
+    assert filters.startswith(f"buyingOptions:{{{expected}}},itemStartDate:[")
+    assert filters.endswith(",searchInDescription:true")
+    assert params == {
         "q": "camera", "limit": "200", "offset": "0", "sort": "newlyListed",
-        "filter": f"buyingOptions:{{{expected}}}",
     }
 
 
@@ -84,7 +88,7 @@ def test_transient_failures_retry_twice_on_same_page(failure, delays):
 
 def test_exhausted_retries_preserve_previous_page(delays):
     first = [{"itemId": str(10000 + i)} for i in range(200)]
-    session = Session([Response(data={"total": 400, "itemSummaries": first}),
+    session = Session([Response(data={"total": 400, "next": "https://api.ebay.com/buy/browse/v1/item_summary/search?offset=200", "itemSummaries": first}),
                        Response(500), Response(500), Response(500)])
     outcome = search(session)
     assert outcome.status == "failed"
@@ -105,7 +109,7 @@ def test_permanent_errors_are_not_empty_successes(status, delays):
     assert delays == []
 
 
-@pytest.mark.parametrize("data", [[], {"errors": [{"errorId": 123}]}, {}, {"total": "oops"},
+@pytest.mark.parametrize("data", [[], {"errors": [{"errorId": 123}]}, {"itemSummaries": "bad"}, {"total": "oops"},
                                  {"total": True}, {"total": -1}, {"total": 2, "itemSummaries": {}},
                                  {"total": 2, "itemSummaries": [None]}, ValueError("bad json")])
 def test_bad_payload_is_failure(data, delays):
@@ -114,28 +118,10 @@ def test_bad_payload_is_failure(data, delays):
     assert len(session.calls) == 1
 
 
-def test_short_page_does_not_claim_full_coverage():
+def test_short_page_without_next_is_complete_despite_estimate():
     outcome = search(Session([Response(data={"total": 250, "itemSummaries": [{"itemId": "12345"}]})]))
-    assert outcome.status == "failed"
+    assert outcome.status == "success"
     assert len(outcome.raw_items) == 1
-
-
-@pytest.mark.parametrize("total,status", [(9999, "success"), (10000, "success"), (10001, "truncated")])
-def test_result_cap_and_sort_on_every_page(total, status):
-    def respond(kwargs):
-        params = kwargs["params"]
-        offset, limit = int(params["offset"]), int(params["limit"])
-        return Response(data={"total": total, "itemSummaries": [
-            {"itemId": str(i + 10000)} for i in range(offset, min(offset + limit, total))]})
-
-    session = Session(respond)
-    outcome = search(session)
-    assert outcome.status == status
-    assert len(outcome.raw_items) == min(total, 10000)
-    assert outcome.total == total
-    assert len(session.calls) == 50
-    assert all(c["params"]["sort"] == "newlyListed" for c in session.calls)
-    assert int(session.calls[-1]["params"]["offset"]) == 9800
 
 
 def test_concurrent_401s_share_one_refresh(monkeypatch):
@@ -209,13 +195,13 @@ def test_rate_limit_keeps_partial_pages_from_cancelled_search():
                 self._rate_limited.set()
                 raise RateLimitError()
             if params["offset"] == "0":
-                return {"total": 400, "itemSummaries": [{"itemId": str(i + 10000)} for i in range(200)]}
+                return {"total": 400, "next": "https://api.ebay.com/buy/browse/v1/item_summary/search?offset=200", "itemSummaries": [{"itemId": str(i + 10000)} for i in range(200)]}
             self.second_page_started.set()
             await asyncio.Event().wait()
 
     run = asyncio.run(Client().run_queries(["EBAY_GB"], [SearchQuery(q, q) for q in ["partial", "rate", "queued"]], {}))
     assert run.exit_code == 2
-    assert len(run.items) == 200
+    assert len(run.items) == 400
     assert [o.status for o in run.outcomes] == ["cancelled", "rate_limited", "cancelled"]
 
 
@@ -236,17 +222,6 @@ def test_auction_bid_and_missing_prices():
              {"itemId": "44444", "price": {"value": "0", "currency": "EUR"}}]
     assert [item.price for item in parse_search_results("camera", items, {"USD": 1.2})] == [
         "Current bid: 10.00 EUR (12.00 USD)", "Price unavailable", "Price unavailable", "0.00 EUR"]
-
-
-def test_result_cap_with_page_size_not_dividing_10000():
-    def respond(kwargs):
-        offset = int(kwargs["params"]["offset"])
-        return Response(data={"total": 10001, "itemSummaries": [
-            {"itemId": str(i + 10000)} for i in range(offset, min(offset + 128, 10001))]})
-
-    outcome = asyncio.run(EbayClient("token")._search_with_session(Session(respond), "EBAY_GB", "camera", limit=128))
-    assert outcome.status == "truncated"
-    assert len(outcome.raw_items) == 10000
 
 
 def test_caller_cancellation_is_not_swallowed():

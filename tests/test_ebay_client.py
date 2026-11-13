@@ -103,6 +103,7 @@ class FakeSearchResponse:
     async def json(self):
         return {
             "total": self.total,
+            "next": f"https://api.ebay.com/buy/browse/v1/item_summary/search?offset={self.offset+self.limit}" if self.offset+self.limit < self.total else None,
             "itemSummaries": [
                 {"itemId": f"v1|{self.offset + index}|0"}
                 for index in range(min(self.limit, max(0, self.total - self.offset)))

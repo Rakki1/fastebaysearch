@@ -93,3 +93,14 @@ def test_partial_run_in_header(monkeypatch):
     notifier = TelegramNotifier(TelegramConfig("token", "chat"))
     assert asyncio.run(notifier.send_header(3, "PARTIAL SEARCH: failed=1")) is True
     assert "PARTIAL SEARCH: failed=1" in session.calls[0][1]["json"]["text"]
+
+
+def test_header_without_summary_has_no_empty_line(monkeypatch):
+    session = Session([Response({"ok": True})])
+    monkeypatch.setattr(aiohttp, "ClientSession", lambda **kwargs: session)
+    notifier = TelegramNotifier(TelegramConfig("token", "chat"))
+    assert asyncio.run(notifier.send_header(3)) is True
+    lines = session.calls[0][1]["json"]["text"].split("\n")
+    assert len(lines) == 2
+    assert lines[0].startswith("<b>SEARCH REPORT (")
+    assert lines[1] == "<b>3</b> items awaiting notification"

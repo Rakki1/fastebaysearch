@@ -39,6 +39,7 @@ def run_api_budget_estimate(config_path: Path, script_dir: Path) -> int:
         config.ebay_sites, queries, daily_api_limit=config.ebay_daily_api_limit,
         safety_percent=config.api_budget_safety_percent,
         estimated_results_per_query=config.estimated_results_per_query,
+        max_search_calls=config.ebay_max_search_calls_per_run,
     )
     print(format_api_budget_estimate(estimate))
     return 0
@@ -55,7 +56,9 @@ async def _make_client(config, logger):
     auth = EbayAuth(config.token_file, config.ebay_client_id, config.ebay_client_secret, logger)
     token = await asyncio.to_thread(auth.get_access_token)
     return EbayClient(token, logger, config.api_concurrency,
-                      buying_options=config.ebay_buying_options, auth=auth)
+                      buying_options=config.ebay_buying_options, auth=auth,
+                      search_in_description=config.ebay_search_in_description,
+                      max_search_calls=config.ebay_max_search_calls_per_run)
 
 
 async def run_app(config_path: Path, script_dir: Path) -> int:
@@ -122,6 +125,10 @@ async def run_clean_search(config_path: Path, script_dir: Path) -> int:
         sent = HtmlReportNotifier(config.html_report_dir, config.html_report_max_per_run, logger).send(
             unique_items, person_name, run_summary=report_summary,
         )
+        if not unique_items and search_run.exit_code:
+            notifier = HtmlReportNotifier(config.html_report_dir, config.html_report_max_per_run, logger)
+            if not notifier.send_status(report_summary, person_name):
+                return search_run.exit_code or 1
         errors = []
         if len(sent) < len(unique_items):
             errors.append(f"Clean search report incomplete: found={len(unique_items)}, "

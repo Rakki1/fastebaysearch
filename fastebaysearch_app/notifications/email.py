@@ -25,7 +25,7 @@ def render_email_html(results: list[SearchResult], person_name: str, run_summary
             f"""
             <tr>
                 <td>{index}</td>
-                <td>{esc(result.name)}</td>
+                <td>{esc(result.name)}<br>{esc(result.change_description)}</td>
                 <td>{esc(result.ebay_site)}</td>
                 <td>{esc(result.price)}</td>
                 <td>{esc(result.seller)}</td>
@@ -90,7 +90,14 @@ class EmailNotifier:
             return []
         results = results[: self.config.max_per_run]
 
-        subject = f"[{len(results)} NEW] {self.config.subject}"
+        return self._deliver(results, run_summary)
+
+    def send_status(self, summary: str) -> bool:
+        return self._deliver([], summary, status_only=True)
+
+    def _deliver(self, results, run_summary, status_only=False):
+        label = "PARTIAL SEARCH" if status_only else f"{len(results)} LISTINGS"
+        subject = f"[{label}] {self.config.subject}"
         message = MIMEMultipart()
         message["From"] = self.config.sender
         message["To"] = self.config.receiver
@@ -105,9 +112,9 @@ class EmailNotifier:
                     server.login(self.config.smtp_login, self.config.smtp_password)
                 server.send_message(message)
                 self.logger.info(f"Email sent: {subject}")
-                return results
+                return True if status_only else results
         except smtplib.SMTPAuthenticationError:
             self.logger.error("SMTP authentication failed; check username and password.")
         except (OSError, smtplib.SMTPException) as exc:
             self.logger.error(f"SMTP error: {exc}")
-        return []
+        return False if status_only else []

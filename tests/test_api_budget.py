@@ -44,5 +44,5 @@ def test_retry_allowance_and_hard_cap_are_separate_from_normal_estimate():
                                    estimated_results_per_query=400)
     assert estimate.calls_per_run_estimated == 4
     assert estimate.calls_per_run_with_retries == 14  # 4 pages x 3 attempts + 2 authentication replays
-    assert estimate.calls_per_run_maximum == 302  # 2 searches x 50 pages x 3 attempts + 2 replays
+    assert estimate.calls_per_run_maximum == 500  # Shared per-run cap, including partitions and retries
     assert "OAuth calls (separate from Browse): 0-2" in format_api_budget_estimate(estimate)

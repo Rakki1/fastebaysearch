@@ -22,10 +22,14 @@ class HtmlReportNotifier:
         self.logger = logger or logging.getLogger("fastebaysearch")
         self.last_report_path: Path | None = None
 
+    def send_status(self, summary, person_name="User") -> bool:
+        self.send([], person_name, summary, status_only=True)
+        return self.last_report_path is not None
+
     def send(self, results: list[SearchResult], person_name: str = "User",
-             run_summary: str = "") -> list[SearchResult]:
+             run_summary: str = "", status_only=False) -> list[SearchResult]:
         self.last_report_path = None
-        if not results:
+        if not results and not status_only:
             return []
 
         selected_results = results[: self.max_per_run]

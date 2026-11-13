@@ -66,6 +66,8 @@ class AppConfig:
     ebay_daily_api_limit: int = 10000
     api_budget_safety_percent: int = 90
     estimated_results_per_query: int = 200
+    ebay_search_in_description: bool = True
+    ebay_max_search_calls_per_run: int = 500
     ebay_buying_options: list[str] = field(default_factory=lambda: ["FIXED_PRICE", "AUCTION"])
 
 
@@ -217,6 +219,8 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
         ),
         ebay_sites=ebay_sites,
         ebay_buying_options=buying_options,
+        ebay_search_in_description=as_bool(raw.get("ebay_search_in_description"), True),
+        ebay_max_search_calls_per_run=parse_int(raw.get("ebay_max_search_calls_per_run"), "ebay_max_search_calls_per_run", 500, minimum=1),
         exclude_terms=normalize_terms(raw.get("exclude_terms")),
         search=search,
         email=email,

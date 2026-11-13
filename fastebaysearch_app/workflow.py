@@ -29,7 +29,9 @@ class WorkflowResult:
 def dedupe_by_item_id(results: list[SearchResult]) -> list[SearchResult]:
     deduped: dict[str, SearchResult] = {}
     for result in results:
-        deduped[result.item_id] = result
+        previous = deduped.get(result.item_id)
+        if previous is None or (result.source_site == result.ebay_site and previous.source_site != previous.ebay_site):
+            deduped[result.item_id] = result
     return list(deduped.values())
 
 
@@ -90,7 +92,7 @@ class Workflow:
 
         if self.config.use_telegram and self.config.telegram:
             try:
-                if not await self._notify_telegram(notification_summary):
+                if not await self._notify_telegram(notification_summary if search_run.exit_code else ""):
                     result.notification_errors.append("Telegram notification failed")
             except Exception as exc:
                 self.logger.error("Telegram notification failed: %s", type(exc).__name__)
@@ -108,9 +110,9 @@ class Workflow:
 
     async def _notify_telegram(self, summary: str) -> bool:
         pending = self.database.claim_pending_telegram_notifications(self.config.telegram.max_per_run)
-        if not pending:
-            return True
         telegram = self.telegram_notifier or TelegramNotifier(self.config.telegram, self.logger)
+        if not pending:
+            return await telegram.send_status(summary) if summary else True
         try:
             header_ok = await telegram.send_header(len(pending), run_summary=summary)
         except Exception:
@@ -124,24 +126,24 @@ class Workflow:
         except Exception:
             self.database.mark_telegram_failed(pending, "Telegram notification failed")
             raise
-        sent_ids = {item.item_id for item in sent}
-        failed = [item for item in pending if item.item_id not in sent_ids]
+        sent_ids = {item.notification_key for item in sent}
+        failed = [item for item in pending if item.notification_key not in sent_ids]
         self.database.mark_telegram_succeeded(sent)
         self.database.mark_telegram_failed(failed, "Telegram notification failed")
         return not failed
 
     def _notify_email(self, summary: str) -> bool:
         pending = self.database.pending_email_notifications(self.config.email.max_per_run)
-        if not pending:
-            return True
         email = self.email_notifier or EmailNotifier(self.config.email, self.logger)
+        if not pending:
+            return email.send_status(summary) if "PARTIAL SEARCH" in summary else True
         try:
             sent = email.send(pending, run_summary=summary)
         except Exception:
             self.database.mark_email_failed(pending, "Email notification failed")
             raise
-        sent_ids = {item.item_id for item in sent}
-        failed = [item for item in pending if item.item_id not in sent_ids]
+        sent_ids = {item.notification_key for item in sent}
+        failed = [item for item in pending if item.notification_key not in sent_ids]
         self.database.mark_email_succeeded(sent)
         self.database.mark_email_failed(failed, "Email notification failed")
         return not failed
