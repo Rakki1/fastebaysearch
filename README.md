@@ -282,9 +282,29 @@ A failed or partial search is not equivalent to a successful search with zero re
 ## Updating
 
 1. Stop scheduled runs and back up your configuration and SQLite database. Use SQLite's backup facility, or stop all database users before copying the database and any WAL files.
-2. Review the [release notes](https://github.com/Rakki1/fastebaysearch/releases), run `git pull --ff-only`, and reinstall dependencies with `.venv/bin/python -m pip install -r requirements.txt` (use `.\.venv\Scripts\python.exe` on Windows).
+2. Review the [release notes](https://github.com/Rakki1/fastebaysearch/releases), then update the code and dependencies using the commands below.
 3. Compare your settings with `ebaysearch.example.json`, keeping your credentials and search terms. Database schema updates run automatically and preserve existing history.
 4. Run once manually, check the log and exit code, then resume scheduling. Broader search defaults can increase the first result batch.
+
+Replace the project path below with your installation directory. Run these commands after stopping scheduled runs and taking the backup.
+
+### Linux
+
+```bash
+cd /path/to/fastebaysearch
+git pull --ff-only
+.venv/bin/python -m pip install -r requirements.txt
+```
+
+### Windows PowerShell
+
+```powershell
+Set-Location C:\path\to\fastebaysearch
+git pull --ff-only
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+If a command fails, resolve the error before continuing. Keep your existing configuration file; do not overwrite it with the example.
 
 ## Local credentials
 
