@@ -2,9 +2,10 @@
 
 `fastebaysearch` is a command-line Python tool for running large numbers of searches across multiple eBay marketplaces.
 
-When run as a scheduled task, it provides a more powerful and flexible alternative to eBay’s own saved search alerts, especially for collectors tracking many specific items.
+The tool stores listing history in SQLite and reports new items, fixed-price decreases and buying-option changes by email, Telegram or local HTML files.
 
-The tool searches configured marketplaces, stores seen item IDs in a local SQLite database, and reports only new results by email, Telegram, or local HTML report files.
+<details>
+<summary>Notification examples</summary>
 
 **Telegram**
 
@@ -14,23 +15,18 @@ The tool searches configured marketplaces, stores seen item IDs in a local SQLit
 
 ![Email](samples/email.png)
 
+</details>
+
 `fastebaysearch` is based on the original **ebaysearch** script version 0.4.0 by Kalevi Kolttonen.
 
-It continues the original idea of configurable eBay searches, SQLite-based tracking, and email notifications with a refactored asynchronous codebase, eBay Browse API support, Telegram notifications, HTML reports, retry handling, exchange-rate caching, stronger validation, and expanded tests.
-
-Original project:  
-https://kolttonen.fi/computers_and_logic/programming/ebaysearch/ebaysearch.html
+Original project: [ebaysearch](https://kolttonen.fi/computers_and_logic/programming/ebaysearch/ebaysearch.html).
 
 ## Features
 
-- Asynchronous search execution for faster bulk searches and scheduled monitoring runs.
-- Search multiple configured eBay marketplaces in one run. Each marketplace/query combination uses its own paginated API requests.
-- eBay Browse API search monitoring for configured marketplaces.
-- Local SQLite database for tracking seen items and search history.
-- Comprehensive email reports, local HTML report files, and Telegram notifications with details and links for new results.
-- Telegram image notification support.
-- Currency conversion support with SQLite-cached exchange rates, so they do not need to be fetched on every run.
-- Configurable search terms, required and excluded terms, notification limits, parallel API request limits and more.
+- Concurrent searches across configured eBay marketplaces, covering fixed-price listings and auctions.
+- Title-and-description search, continuation-link pagination and automatic splitting of large searches.
+- SQLite history and separate delivery queues for new and changed listings.
+- Telegram images, local HTML reports, currency conversion and API budget estimates.
 
 ## Requirements
 
@@ -38,7 +34,6 @@ https://kolttonen.fi/computers_and_logic/programming/ebaysearch/ebaysearch.html
 - An eBay Developer account and production application credentials (`Client ID` and `Client Secret`) with access to the Browse API. The script uses production eBay endpoints.
 - SMTP credentials if email notifications are enabled.
 - A Telegram bot token and chat ID if Telegram notifications are enabled. See instructions: https://www.youtube.com/watch?v=SmckRL4n1_8&t=26s
-- A small server, such as a Raspberry Pi, should work fine.
 
 ## Installation
 
@@ -83,7 +78,7 @@ python -m venv .venv
 Copy-Item ebaysearch.example.json ebaysearch.json
 ```
 
-All remaining commands run from this project directory. They call the virtual environment's Python directly, so activation is unnecessary. This still uses the virtual environment and its installed dependencies.
+Run commands from the project directory. They use the virtual environment directly; activation is unnecessary.
 
 ## First HTML search
 
@@ -101,6 +96,8 @@ Open `ebaysearch.json` in a text editor. **The copied example enables email**, s
   "ebay_client_secret": "your-production-client-secret",
   "ebay_sites": ["EBAY_GB"],
   "ebay_buying_options": ["FIXED_PRICE", "AUCTION"],
+  "ebay_search_in_description": true,
+  "ebay_max_search_calls_per_run": 500,
   "ebay_search_keywords": {
     "base_terms": ["Slapshot"],
     "required_terms": ["commodore", "c64"]
@@ -170,33 +167,27 @@ On a new database, the first normal run treats all matching items as new. **A pr
 
 Notification delivery is tracked separately for each channel. An email delivery does not mark a Telegram notification as delivered. Enabling Telegram later can therefore send previously stored items that are still pending for Telegram, including items discovered while Telegram was disabled. Email likewise processes its own pending history. Keep a per-run limit that suits the initial batch.
 
-HTML behaves differently: only items first discovered while HTML is enabled enter its queue. Enabling HTML later does not retrospectively queue existing history. See [HTML delivery queue](#html-delivery-queue).
+HTML behaves differently: only items first discovered while HTML is enabled enter its queue. Enabling HTML later does not retrospectively queue existing history. Overflow and failed writes stay queued for later runs.
 
-### Email
+### Channel settings
 
-To enable email, set `use_email` to `true` and replace the copied example's SMTP and email placeholders:
+| Channel | Configuration |
+| --- | --- |
+| HTML | `use_html_report: true`; set `html_report_dir` and `html_report_max_per_run` (default **1,000**). Overflow and failed writes stay queued. |
+| Email | `use_email: true`; fill in the example's `smtp_*` and `email_*` fields. `email_max_per_run` defaults to **1,000**. SMTP supports optional STARTTLS, not implicit TLS. |
+| Telegram | `use_telegram: true`; set `telegram_token`, `telegram_chat_id` and `telegram_max_per_run`: **25** in the example, **1,000** if omitted. |
 
-- Set `smtp_server` and `smtp_port` to your provider's SMTP submission settings. The current client supports SMTP with optional STARTTLS, not implicit TLS (`SMTP_SSL`).
-- Set `smtp_starttls_encryption` and `smtp_authentication` as required by your provider. The example uses port 587, STARTTLS and authentication.
-- Fill in `smtp_login` and `smtp_password` with the credentials your provider accepts, such as an app password where required.
-- Set `email_sender`, `email_receiver`, `email_subject` and `email_person_name`.
-- Set `email_max_per_run` to limit the number of pending items included in one run's email. The example and the fallback default are 1,000.
+Email requires non-empty SMTP login/password and identity fields even when authentication is disabled. Keep unconfigured channels disabled.
 
-The current configuration loader requires non-empty SMTP login/password and email identity fields whenever email is enabled, even if SMTP authentication is disabled. Leave email disabled for an HTML-only setup.
+Telegram's `telegram_send_mode` accepts `auto` or `photo` (image when available, text fallback), `text`, or `photo_only` (skips items without images; no fallback). `telegram_disable_web_preview` controls text-link previews. Headers and fallback requests are additional to the item limit. Failed item deliveries become eligible again after six hours, up to three claimed attempts; exhausted items remain stored but are not automatically retried.
 
-### Telegram
+### Changed listings and status alerts
 
-To enable Telegram, set `use_telegram` to `true`, fill in `telegram_token` and `telegram_chat_id`, and set an explicit `telegram_max_per_run`. See the linked [setup walkthrough](https://www.youtube.com/watch?v=SmckRL4n1_8&t=26s) if you need help obtaining the bot details.
+Seen listings are refreshed on every observation. A separate durable event queue reports fixed purchase-price decreases and changes between AUCTION and FIXED_PRICE. Bid changes, title edits and currency-conversion changes do not trigger alerts. Price comparisons require the same currency and source marketplace. Responses from the listing's own marketplace take priority; otherwise the first configured marketplace wins.
 
-The example configuration sets `telegram_max_per_run` to **25 items**; if the field is absent, the program's fallback default is **1,000 items**. A header message is additional, and a failed photo request may also trigger a text fallback request. The item limit is not a strict count of all Telegram API calls.
+The first structured observation of an older listing establishes a baseline without a change alert. A channel whose initial listing notification is pending receives the latest details in that notification. New and changed listings share each channel's per-run limit, with the oldest pending entries selected first.
 
-Choose `telegram_send_mode`:
-
-- `auto` or `photo`: use an image when available, otherwise text; a rejected photo response can fall back to text.
-- `photo_only`: skip items without an image and do not fall back to text.
-- `text`: send text only.
-
-Set `telegram_disable_web_preview` to `true` to disable link previews in text messages. Previously delivered items are not deliberately re-sent; failed item attempts become eligible again after six hours, up to three claimed attempts. Items exceeding that attempt limit remain in the database but are not automatically retried.
+Every partial or failed search run sends one summary per enabled channel even with no pending listings. HTML writes a status-only report when necessary. Successful empty runs remain silent. Successful Telegram reports omit the search-status line. Telegram truncates long diagnostic details with a pointer to the log. Channel failures do not block other channels.
 
 ## Run modes
 
@@ -210,64 +201,21 @@ All modes load and validate the configuration, including credentials for enabled
 
 `--clean-search` and `--estimate-api-budget` cannot be combined.
 
-## Configuration reference
+## Search settings
 
-Use `ebaysearch.json` for your own searches, eBay credentials and notification settings. The examples below show fields to merge into the existing JSON object, not separate configuration files.
+Settings are top-level JSON fields unless shown with a dotted path. See [ebaysearch.example.json](ebaysearch.example.json) for the full configuration.
 
-### Buying options
-
-| Listings to include | `ebay_buying_options` value |
+| Setting | Purpose / default |
 | --- | --- |
-| Fixed-price listings and auctions (default) | `["FIXED_PRICE", "AUCTION"]` |
-| Fixed-price listings only | `["FIXED_PRICE"]` |
-| Auctions only | `["AUCTION"]` |
-
-If the field is missing, both options are included. An empty list or an unknown value is a configuration error. Both options are passed together in one filter for each marketplace/query request; the number of returned pages can still increase when auctions are included.
-
-### Fields
-
-Configuration file fields:
-
-- `use_email`: enables or disables email notifications.
-- `use_telegram`: enables or disables Telegram notifications.
-- `use_html_report`: enables or disables local HTML reports and processing of the persistent HTML delivery queue.
-- `html_report_dir`: local report directory, relative to the directory where the script is run. Defaults to the current working directory when omitted.
-- `html_report_max_per_run`: maximum number of pending items written to an HTML report per normal run; remaining items stay queued.
-- `telegram_max_per_run`: maximum number of pending items handled in one run; 25 in the example, 1,000 when omitted. The header and any photo fallback requests are additional.
-- `telegram_token`: Telegram bot token used when Telegram notifications are enabled.
-- `telegram_chat_id`: Telegram chat id where notifications are sent.
-- `telegram_send_mode`: one of `auto`, `photo`, `photo_only`, or `text`.
-- `telegram_disable_web_preview`: disables Telegram link previews for text messages when enabled.
-- `ebay_sites`: eBay marketplaces to search, for example `EBAY_US`, `EBAY_GB`, `EBAY_DE`.
-- `ebay_buying_options`: a non-empty list containing `FIXED_PRICE`, `AUCTION`, or both. Defaults to `["FIXED_PRICE", "AUCTION"]`, including for older configuration files. Both options use one combined search request.
-- `exclude_terms`: terms excluded from generated search queries.
-- `ebay_client_id`: eBay Developer application client id.
-- `ebay_client_secret`: eBay Developer application client secret.
-- `ebay_urls_dbfile`: SQLite database file name. The file is created under the project directory.
-- `ebay_oauth_file`: OAuth token cache file name. The file is created under the project directory.
-- `ebay_search_keywords`: search keyword configuration object.
-- `ebay_search_keywords.base_terms`: base expressions; each list entry generates a separate query on every configured marketplace.
-- `ebay_search_keywords.required_terms`: alternatives added as an OR group; at least one alternative is required, not all of them.
-- `smtp_server`: SMTP server hostname used for email notifications.
-- `smtp_port`: SMTP server port.
-- `smtp_starttls_encryption`: enables or disables SMTP STARTTLS.
-- `smtp_authentication`: enables or disables SMTP authentication.
-- `smtp_login`: SMTP username.
-- `smtp_password`: SMTP password.
-- `email_sender`: email sender address.
-- `email_receiver`: email recipient address.
-- `email_subject`: subject line for result emails.
-- `email_person_name`: recipient name used in email and clean-search report text.
-- `email_max_per_run`: maximum number of pending email notification items handled in one run.
-- `api_concurrency`: number of eBay API searches allowed to run concurrently.
-- `exchange_rate_cache_ttl_hours`: exchange-rate cache lifetime in hours. Use `0` to disable the cache.
-- `log_to_console`: also writes logs to stdout/stderr when enabled.
-- `log_max_size_mb`: maximum size of `fastebaysearch.log` before rotation, in MiB. Defaults to `10`.
-- `ebay_daily_api_limit`: your Browse API daily call budget; the program's calculation default is `10000`, not a guarantee of your eBay quota.
-- `api_budget_safety_percent`: percentage of that budget available to the estimate, from 1 to 100; defaults to `90`.
-- `estimated_results_per_query`: estimated results per marketplace/query; defaults to `200`. Used for the budget estimate only, not as a result limit.
-
-Database, token and log paths must stay under the project directory. The script rejects configured paths that escape the project directory. The HTML report directory must be relative to the working directory and stay beneath it; the first-run instructions use the project directory so reports appear under `reports/`.
+| `ebay_sites` | Marketplaces such as `EBAY_GB`, `EBAY_US` and `EBAY_DE`. |
+| `ebay_buying_options` | `["FIXED_PRICE", "AUCTION"]` by default; either value alone restricts the listing format. |
+| `ebay_search_in_description` | `true`: search titles and descriptions. Set `false` for title search. Defaults to `true` when omitted. |
+| `ebay_search_keywords.base_terms` | Each expression generates a query on every configured marketplace. |
+| `ebay_search_keywords.required_terms` | At least one alternative must match. Use `[]` to omit the restriction. |
+| `exclude_terms` | Exclusions appended to every query. |
+| `ebay_max_search_calls_per_run` | Shared Browse request cap, including retries: **500** per run. |
+| `api_concurrency` | Maximum concurrent Browse requests: **8**. |
+| `exchange_rate_cache_ttl_hours` | Exchange-rate cache lifetime: **24** hours; `0` disables caching. |
 
 ### Search expressions and coverage
 
@@ -275,19 +223,11 @@ Search terms separated by spaces retain eBay's AND semantics. For example, base 
 
 Every complete query, including all exclusions, must fit within eBay's 100-character limit. An overlong query is rejected with its base term, full text and length before logging, database access or API calls. This applies to normal runs, clean searches and budget estimates. Shorten the terms or split the configuration; no exclusions are silently discarded.
 
-Searches use `sort=newlyListed`, with pagination driven by the API's `next` link rather than its approximate `total`. Searches reaching 10,000 results are automatically split into overlapping listing-start time intervals; duplicate item IDs are merged. Each run fixes its upper time boundary at startup and processes newer intervals first. All configured searches share `ebay_max_search_calls_per_run` (default **500**), including retries and authentication replays of Browse requests. OAuth and exchange-rate requests are separate. A budget stop or an unsplittable interval is reported as `truncated`; received results are retained. Each run starts afresh rather than resuming old partitions. Live inventory changes and the call cap mean exhaustive coverage is not guaranteed.
+Results are ordered newest first and paginated using the API's continuation link. Searches reaching 10,000 results are split into listing-start time ranges and duplicate IDs are merged. All searches share the **500-call per-run cap**, including retries; OAuth and exchange-rate requests are separate. A budget stop or unsplittable interval is reported as `truncated`, with received results retained. Each run starts afresh rather than resuming unfinished ranges; complete coverage is not guaranteed for changing inventory or budget-limited searches.
 
-`ebay_search_in_description` defaults to `true`, enabling title-and-description search. Set it to `false` to retain title search. `required_terms` still requires at least one listed alternative; `exclude_terms` still applies. Description searches can find bundles and listings whose titles omit the desired item, but may also return more irrelevant matches. Auction-only listings use the current bid amount labelled `Current bid`; missing prices display `Price unavailable`.
+Description search can find items omitted from listing titles but may return more irrelevant matches. `required_terms` and exclusions still apply. Auction-only listings show `Current bid`; missing prices display `Price unavailable`.
 
-HTTP 500/502/503/504, connection failures and timeouts receive up to two retries of the affected page, after 1 and 2 seconds. Concurrent HTTP 401 failures share at most one forced token refresh per run. Other permanent HTTP errors are not retried. HTTP 429 stops further searches and cancels outstanding requests. Results already received are still saved and delivered. Each query's outcome and overall completeness appear in the log; reports and notification summaries identify partial searches. A channel failure does not prevent the other notification channels from running.
-
-### HTML delivery queue
-
-When HTML is enabled, newly discovered items are queued in SQLite in the same transaction as their initial insertion. Each normal run writes the oldest pending items up to `html_report_max_per_run`, even if the current search finds nothing new. Excess items and failed writes remain pending for a later run. Successfully delivered items record the report path and delivery time.
-
-Disabling HTML pauses processing of its existing queue. Items first discovered while HTML is disabled are not queued retrospectively. Upgrading an existing database starts with an empty HTML queue; historical items, including any previously missed reports, are not automatically replayed.
-
-Report files are written atomically. A short SQLite write transaction protects each local report batch from concurrent delivery. A process crash after the file is finalized but before the database commit may produce a duplicate report on retry; items remain queued until delivery is confirmed.
+Temporary API failures receive up to two retries; authentication errors allow one shared token refresh. Rate limiting stops outstanding searches. Results already received are retained, and incomplete runs are identified in logs and notifications.
 
 ## API budget and scheduling
 
@@ -305,7 +245,7 @@ These optional fields control the estimate:
 
 Run `--estimate-api-budget` using the commands in [First HTML search](#first-html-search). The estimate uses the number of marketplaces, generated queries and expected result pages. Each marketplace/query combination makes a separate request for each page; a run is not one API call for all marketplaces.
 
-The output shows estimated calls per run, possible runs per day and a recommended interval. It also shows a retry allowance at the estimated page count and the maximum Browse call count at the 10,000-result cap. OAuth calls are separate (0–2 per run). The recommended interval uses the normal estimate; allow headroom for retries, other applications using the same quota and higher result counts. This estimate is not a measurement of your actual usage.
+The output shows estimated calls per run, possible runs per day and a recommended interval. It also shows a retry allowance at the estimated page count and the configured per-run Browse call cap. OAuth calls are separate (0–2 per run). The recommended interval uses the normal estimate; allow headroom for retries, other applications using the same quota and higher result counts. Automatic time-range splitting can increase usage beyond the estimate. The 500-call cap is per run, not a daily quota controller.
 
 ### Scheduled runs with cron
 
@@ -327,25 +267,24 @@ Exit codes:
 - `1`: configuration, database, token, notification or other runtime error; also an incomplete search or truncated clean-search report.
 - `2`: eBay rate limiting was encountered; takes precedence over notification/report failures. Results received before the search cancellation are still processed.
 
-A failed or partial search is not equivalent to a successful search with zero results. Check the per-query status, reported/fetched counts and notification errors in the log.
+A failed or partial search is not equivalent to a successful search with zero results. Check the per-query status, fetched counts and notification errors in the log.
 
 | Symptom | What to check |
 | --- | --- |
 | Configuration error | Valid JSON, required fields for enabled channels, allowed paths, and the full query's 100-character limit |
 | No HTML report | Whether the search succeeded with zero results; in normal mode, whether HTML is enabled and its queue has pending items |
-| `PARTIAL SEARCH` or a 10,000-item cutoff | Affected queries and API errors in the log; narrow broad searches |
+| `PARTIAL SEARCH` or a call-budget stop | Affected queries and API errors in the log; narrow broad searches |
 | Clean report contains fewer items than were found | `html_report_max_per_run`; clean search cannot queue the remainder |
 | HTTP 401 | Production eBay credentials and application access; the run already attempts one shared token refresh |
 | HTTP 429 / exit code 2 | Actual application quota and request frequency before the next run |
 | Email or Telegram fails | Channel credentials, settings and logs; the other enabled channels are still attempted |
 
-## Upgrading from 0.6.1
+## Updating
 
-These instructions apply to [release 0.6.2](https://github.com/Rakki1/fastebaysearch/releases/tag/v0.6.2). Use instructions matching the code version you have installed.
-
-Pause the scheduled task and make a SQLite backup before the first upgraded run. If copying database files directly, ensure every process using the database has stopped and retain any WAL files; SQLite's backup API is preferable for a consistent standalone backup. Schema upgrades are automatic, additive and transactional. Existing item history, email/Telegram delivery state and exchange rates are preserved.
-
-The default now includes auctions, so the first upgraded run may discover additional items. Set `"ebay_buying_options": ["FIXED_PRICE"]` to retain the previous buying-format scope. The HTML queue starts empty for existing records: historical items, including previously missed HTML deliveries, are not replayed. Check the log and exit status after the first run, then resume scheduling.
+1. Stop scheduled runs and back up your configuration and SQLite database. Use SQLite's backup facility, or stop all database users before copying the database and any WAL files.
+2. Review the [release notes](https://github.com/Rakki1/fastebaysearch/releases), run `git pull --ff-only`, and reinstall dependencies with `.venv/bin/python -m pip install -r requirements.txt` (use `.\.venv\Scripts\python.exe` on Windows).
+3. Compare your settings with `ebaysearch.example.json`, keeping your credentials and search terms. Database schema updates run automatically and preserve existing history.
+4. Run once manually, check the log and exit code, then resume scheduling. Broader search defaults can increase the first result batch.
 
 ## Local credentials
 
@@ -370,20 +309,3 @@ Windows PowerShell:
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m pytest -q
 ```
-
-
-## Changed listings and empty-run alerts
-
-Seen listings are refreshed on every observation. A separate durable event queue reports fixed purchase-price decreases and changes between AUCTION and FIXED_PRICE. Bid changes, title edits and currency-conversion changes do not trigger alerts. Price comparisons require the same currency and source marketplace. Responses from the listing's own marketplace take priority; otherwise the first configured marketplace wins.
-
-The first observation after upgrading establishes a structured comparison baseline without replaying old listings. A channel that has not yet delivered the first listing receives the latest details in that initial notification. Events for already notified listings retain old/new values and delivery state independently per channel. New and changed listings share each channel's existing per-run item limit; oldest pending entries are selected first. Telegram changes use the existing three-attempt, six-hour retry policy.
-
-Every partial or failed search run sends one summary per enabled channel even with no pending listings. HTML writes a status-only report when necessary. Successful empty runs remain silent. Telegram truncates long diagnostic details with a pointer to the log. Channel failures do not block other channels.
-
-### Upgrading to 0.6.3
-
-These changes are included in [release 0.6.3](https://github.com/Rakki1/fastebaysearch/releases/tag/v0.6.3).
-
-Stop the scheduler and back up SQLite before deployment. Startup adds observation, change-event and per-channel delivery tables transactionally; existing listing and delivery history remains in place. Keep the backup for rollback. Broader description searches may produce many new listings on the first upgraded run.
-
-The 500-call cap is **per run**, not a daily quota controller. Re-evaluate the schedule using `--estimate-api-budget`; automatic time partitions can consume more calls than the normal estimate. A partial run should prompt a review of the log, search scope and scheduling before increasing the cap.
