@@ -86,8 +86,12 @@ def test_cli_passes_categories_to_shared_client(monkeypatch,tmp_path):
     assert client.exclude_category_ids=={'EBAY_US':['6028']}
 
 
-def test_example_has_description_disabled_and_optional_exclusions():
+def test_example_starts_with_html_only_and_video_game_categories():
     root=Path(__file__).resolve().parents[1]
     config=load_config(root/'ebaysearch.example.json',root)
     assert config.ebay_search_in_description is False
-    assert config.ebay_exclude_category_ids['EBAY_US']==['6028']
+    assert config.ebay_exclude_category_ids == {}
+    assert config.ebay_category_ids == {'EBAY_GB': ['139973']}
+    assert config.use_html_report is True
+    assert config.use_email is False
+    assert config.use_telegram is False

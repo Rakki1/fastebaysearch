@@ -82,30 +82,18 @@ Run commands from the project directory. They use the virtual environment direct
 
 ## First HTML search
 
-Open `ebaysearch.json` in a text editor. **The copied example enables email**, so turn it off for the first check. Update the following fields in the existing JSON object; keep its other fields. The narrow collector search below is an example you can replace with your own terms:
+The copied example is ready for an HTML-only collector search: **The Last Ninja** and **Impossible Mission** for Commodore 64 on eBay UK, restricted to Video Games (`139973`). It searches titles, covers auctions and fixed-price listings, and leaves email and Telegram disabled. The two game titles are quoted phrases to reduce irrelevant matches.
+
+Open `ebaysearch.json` and replace only these credential placeholders with your own production credentials:
 
 ```json
 {
-  "use_email": false,
-  "use_telegram": false,
-  "use_html_report": true,
-  "html_report_dir": "reports",
-  "html_report_max_per_run": 1000,
-  "log_to_console": true,
   "ebay_client_id": "your-production-client-id",
-  "ebay_client_secret": "your-production-client-secret",
-  "ebay_sites": ["EBAY_GB"],
-  "ebay_buying_options": ["FIXED_PRICE", "AUCTION"],
-  "ebay_search_in_description": true,
-  "ebay_max_search_calls_per_run": 500,
-  "ebay_search_keywords": {
-    "base_terms": ["Slapshot"],
-    "required_terms": ["commodore", "c64"]
-  }
+  "ebay_client_secret": "your-production-client-secret"
 }
 ```
 
-Replace both eBay credential placeholders. No SMTP or Telegram credentials are needed while those channels are disabled; their placeholder fields can remain in the copied configuration. Save valid JSON without comments or trailing commas.
+Keep the other fields in the copied configuration. No real credentials are included in the example. No SMTP or Telegram credentials are needed while those channels are disabled; their placeholders can remain. Save valid JSON without comments or trailing commas. You can change the game titles and marketplaces later; available listings vary over time.
 
 First estimate usage without making network calls:
 
@@ -236,11 +224,11 @@ To restrict searches to video games, add the following top-level setting:
 }
 ```
 
-`139973` is Video Games on these six marketplaces; it includes modern games too, so keep your C64/game keywords. Optionally add `"4193"` (Other Vintage Computing) to find listings outside Video Games, at the cost of broader results. Misclassified games outside the selected categories will be missed. The generic example configuration leaves this restriction disabled.
+`139973` is Video Games on these six marketplaces; it includes modern games too, so keep your C64/game keywords. Optionally add `"4193"` (Other Vintage Computing) to find listings outside Video Games, at the cost of broader results. Misclassified games outside the selected categories will be missed. The starter configuration uses only `EBAY_GB` and `139973`.
 
 eBay's [category_ids parameter](https://developer.ebay.com/develop/api/buy/browse_api/item/search) accepts one category per request. Multiple configured IDs are searched separately and duplicate item IDs are merged before delivery. With 13 queries and six marketplaces, one category requires at least 78 Browse calls; two require 156. Pagination and retries add calls, within the shared per-run cap. The budget estimate includes these category searches. Logs identify each category; an invalid-category API warning fails that search instead of accepting unrestricted results. Missing marketplace entries or `[]` mean all categories.
 
-To keep description search while excluding vehicle parts, add category IDs per marketplace. The example configuration includes these optional exclusions and leaves description search disabled:
+For broader searches, you can optionally exclude vehicle parts with the following setting. The starter configuration does not need these exclusions because it searches only Video Games:
 
 ```json
 {

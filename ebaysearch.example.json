@@ -1,7 +1,7 @@
 {
-    "use_email": true,
+    "use_email": false,
     "use_telegram": false,
-    "use_html_report": false,
+    "use_html_report": true,
     "html_report_dir": "reports",
     "html_report_max_per_run": 1000,
     "telegram_max_per_run": 25,
@@ -10,14 +10,14 @@
     "telegram_send_mode": "auto",
     "telegram_disable_web_preview": false,
     "ebay_sites": [
-        "EBAY_GB",
-        "EBAY_US",
-        "EBAY_DE",
-        "EBAY_AU",
-        "EBAY_FR"
+        "EBAY_GB"
     ],
     "ebay_search_in_description": false,
-    "ebay_category_ids": {},
+    "ebay_category_ids": {
+        "EBAY_GB": [
+            "139973"
+        ]
+    },
     "ebay_max_search_calls_per_run": 500,
     "ebay_buying_options": [
         "FIXED_PRICE",
@@ -30,10 +30,13 @@
     "ebay_oauth_file": "oauth_token.json",
     "ebay_search_keywords": {
         "base_terms": [
-            "camera"
+            "\"The Last Ninja\"",
+            "\"Impossible Mission\""
         ],
         "required_terms": [
-            "canon"
+            "\"commodore 64\"",
+            "c64",
+            "c-64"
         ]
     },
     "smtp_server": "smtp.gmail.com",
@@ -45,30 +48,10 @@
     "email_sender": "CHANGE_ME@example.com",
     "email_receiver": "CHANGE_ME@example.com",
     "email_subject": "New eBay search results",
-    "email_person_name": "Postman Pat",
+    "email_person_name": "Collector",
     "email_max_per_run": 1000,
     "api_concurrency": 8,
     "exchange_rate_cache_ttl_hours": 24,
-    "log_to_console": false,
-    "log_max_size_mb": 10,
-    "ebay_exclude_category_ids": {
-        "EBAY_GB": [
-            "131090"
-        ],
-        "EBAY_US": [
-            "6028"
-        ],
-        "EBAY_DE": [
-            "131090"
-        ],
-        "EBAY_AU": [
-            "131090"
-        ],
-        "EBAY_FR": [
-            "131090"
-        ],
-        "EBAY_IT": [
-            "131090"
-        ]
-    }
+    "log_to_console": true,
+    "log_max_size_mb": 10
 }
