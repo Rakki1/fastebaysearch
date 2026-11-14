@@ -92,6 +92,7 @@ class AppConfig:
     api_budget_safety_percent: int = 90
     estimated_results_per_query: int = 200
     ebay_search_in_description: bool = True
+    ebay_filter_recommendations: bool = False
     ebay_max_search_calls_per_run: int = 500
     ebay_exclude_category_ids: dict[str, list[str]] = field(default_factory=dict)
     ebay_category_ids: dict[str, list[str]] = field(default_factory=dict)
@@ -270,6 +271,7 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
         ebay_exclude_category_ids=excluded_categories,
         ebay_category_ids=categories,
         ebay_search_in_description=as_bool(raw.get("ebay_search_in_description"), True),
+        ebay_filter_recommendations=as_bool(raw.get("ebay_filter_recommendations"), False),
         ebay_max_search_calls_per_run=parse_int(raw.get("ebay_max_search_calls_per_run"), "ebay_max_search_calls_per_run", 500, minimum=1),
         exclude_terms=normalize_terms(raw.get("exclude_terms")),
         search=search,

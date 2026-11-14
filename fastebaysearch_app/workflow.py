@@ -162,7 +162,11 @@ def log_summary(logger: logging.Logger, result: WorkflowResult, start_time: floa
     logger.info(result.search_run.summary)
     for error in result.notification_errors:
         logger.error(error)
-    logger.info(f"Total raw results: {len(result.all_found_items)}")
+    raw_count = (sum(len(outcome.raw_items) for outcome in result.search_run.outcomes)
+                 if result.search_run.outcomes else len(result.all_found_items))
+    logger.info(f"Total raw results: {raw_count}")
+    if result.search_run.recommendations:
+        logger.info("Results after recommendation checks: %s", len(result.all_found_items))
     logger.info(f"Unique item IDs: {len(result.unique_item_ids)}")
     logger.info(f"New items found: {len(result.new_results)}")
     logger.info(

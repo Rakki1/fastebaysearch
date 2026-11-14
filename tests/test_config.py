@@ -40,6 +40,15 @@ def test_load_config_validates_and_resolves_paths(tmp_path):
     assert config.html_report_max_per_run == 1000
     assert config.exchange_rate_cache_ttl_hours == 24
     assert config.log_max_size_mb == 10
+    assert config.ebay_filter_recommendations is False
+
+
+def test_load_config_enables_recommendation_filter(tmp_path):
+    data = minimal_config()
+    data["ebay_filter_recommendations"] = True
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert load_config(path, tmp_path).ebay_filter_recommendations is True
 
 
 def test_load_config_parses_log_max_size_mb(tmp_path):

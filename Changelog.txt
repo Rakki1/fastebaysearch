@@ -1,3 +1,9 @@
+Unreleased
+
+- Add opt-in ebay_filter_recommendations: verify full Browse descriptions and reject matches caused only by recognized wi-recommendations product cards.
+- Retain uncertain matches, share the Browse call cap and retry policy with description checks, and report verification counts in logs and HTML previews.
+- Apply checks before new-result storage in normal and clean-search runs; preserve existing records and notification queues.
+
 fastebaysearch 0.6.4
 
 - Release notes: https://github.com/Rakki1/fastebaysearch/releases/tag/v0.6.4

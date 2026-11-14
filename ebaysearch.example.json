@@ -13,6 +13,7 @@
         "EBAY_GB"
     ],
     "ebay_search_in_description": false,
+    "ebay_filter_recommendations": false,
     "ebay_category_ids": {
         "EBAY_GB": [
             "139973"

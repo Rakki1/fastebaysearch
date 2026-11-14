@@ -199,6 +199,7 @@ Settings are top-level JSON fields unless shown with a dotted path. See [ebaysea
 | `ebay_sites` | Marketplaces such as `EBAY_GB`, `EBAY_US` and `EBAY_DE`. |
 | `ebay_buying_options` | `["FIXED_PRICE", "AUCTION"]` by default; either value alone restricts the listing format. |
 | `ebay_search_in_description` | `true`: search titles and descriptions. Set `false` for title search. The example uses `false`; defaults to `true` when omitted. |
+| `ebay_filter_recommendations` | Default `false`. With description search enabled, check full descriptions for matches contributed only by recognized recommendation blocks. |
 | `ebay_search_keywords.base_terms` | Each expression generates a query on every configured marketplace. |
 | `ebay_search_keywords.required_terms` | At least one alternative must match. Use `[]` to omit the restriction. |
 | `exclude_terms` | Exclusions appended to every query. |
@@ -297,6 +298,23 @@ Results are ordered newest first and paginated using the API's continuation link
 
 Description search can find items omitted from listing titles but may return more irrelevant matches. `required_terms` and exclusions still apply. Auction-only listings show `Current bid`; missing prices display `Price unavailable`.
 
+### Filtering recommendation matches
+
+To keep description search while removing known recommendation-only matches, enable both settings:
+
+```json
+{
+  "ebay_search_in_description": true,
+  "ebay_filter_recommendations": true
+}
+```
+
+Items whose titles satisfy all positive search terms need no additional call. Other items are checked using the full HTML description from Browse `getItem`, cached once per REST item ID and search marketplace during the run. The first supported layout is `div.wi-recommendations` with product cards linking to other eBay items. The checker removes only recognized blocks, preserving description text before and after them. It rejects a match only when the positive terms match the original text but fail after removing recommendations. It supports ordinary AND terms, quoted phrases, comma-separated OR groups and the configured required-term alternatives; negative terms and exclusions remain eBay's responsibility.
+
+Missing descriptions, unfamiliar layouts or query syntax, malformed HTML and failed requests retain the match and log the reason. The check is conservative rather than a guarantee against all irrelevant results. No supported block also counts as uncertain. The run summary reports accepted, rejected and uncertain checks plus description-call attempts; these counts are before final item-ID deduplication. Ordinary verification failures do not change a successful search's exit code; HTTP 429 still returns `2` and stops new API requests.
+
+Filtering happens before saving new results, for both normal runs and `--clean-search`. Existing database records and notification queues are not rechecked or removed. For a first trial, use a separate configuration with one marketplace and one base term, disable email/Telegram and run `--clean-search`. Its local HTML report does not mark items seen or consume later notifications. Set `ebay_filter_recommendations` back to `false` to disable the feature.
+
 Temporary API failures receive up to two retries; authentication errors allow one shared token refresh. Rate limiting stops outstanding searches. Results already received are retained, and incomplete runs are identified in logs and notifications.
 
 ## API budget and scheduling
@@ -314,6 +332,8 @@ These optional fields control the estimate:
 ```
 
 Run `--estimate-api-budget` using the commands in [First HTML search](#first-html-search). The estimate uses the number of marketplaces, generated queries and expected result pages. Each marketplace/query combination makes a separate request for each page; a run is not one API call for all marketplaces.
+
+When recommendation filtering is enabled, description calls and their retries share the same per-run Browse cap as search calls. They are not included in the page-based estimate or scheduling interval: measure a clean search before scheduling. If no call budget remains for verification, unchecked matches are retained and logged as uncertain.
 
 The output shows estimated calls per run, possible runs per day and a recommended interval. It also shows a retry allowance at the estimated page count and the configured per-run Browse call cap. OAuth calls are separate (0–2 per run). The recommended interval uses the normal estimate; allow headroom for retries, other applications using the same quota and higher result counts. Automatic time-range splitting can increase usage beyond the estimate. The 500-call cap is per run, not a daily quota controller.
 

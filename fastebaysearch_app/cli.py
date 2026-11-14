@@ -80,6 +80,7 @@ def run_api_budget_estimate(config_path: Path, script_dir: Path) -> int:
         estimated_results_per_query=config.estimated_results_per_query,
         max_search_calls=config.ebay_max_search_calls_per_run,
         category_ids=config.ebay_category_ids,
+        filter_recommendations=config.ebay_filter_recommendations and config.ebay_search_in_description,
     )
     print(format_api_budget_estimate(estimate))
     return 0
@@ -98,6 +99,7 @@ async def _make_client(config, logger):
     return EbayClient(token, logger, config.api_concurrency,
                       buying_options=config.ebay_buying_options, auth=auth,
                       search_in_description=config.ebay_search_in_description,
+                      filter_recommendations=config.ebay_filter_recommendations,
                       exclude_category_ids=config.ebay_exclude_category_ids,
                       category_ids=config.ebay_category_ids,
                       max_search_calls=config.ebay_max_search_calls_per_run)

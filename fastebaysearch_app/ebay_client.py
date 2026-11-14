@@ -9,16 +9,18 @@ import time
 from pathlib import Path
 from datetime import datetime, timezone
 from dataclasses import replace
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from .ebay_urls import build_item_web_url
-from .models import QueryOutcome, SearchQuery, SearchResult, SearchRun
+from .models import QueryOutcome, RecommendationStats, SearchQuery, SearchResult, SearchRun
+from .recommendation_filter import Decision, check_description, matches
 from .utils import clean_ebay_id, format_date, safe_url, scalar_text, write_private_json_atomic
 
 TOKEN_URL = "https://api.ebay.com/identity/v1/oauth2/token"
 SEARCH_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
+ITEM_URL = "https://api.ebay.com/buy/browse/v1/item/"
 EXCHANGE_RATE_URL = "https://api.frankfurter.app/latest?base=EUR&symbols=USD,GBP,AUD"
 EBAY_MAX_OFFSET = 9999
 SEARCH_RETRIES = 2
@@ -169,10 +171,12 @@ class EbayClient:
     def __init__(self, token: str, logger: logging.Logger | None = None, concurrency_limit: int = 8,
                  buying_options: list[str] | None = None, auth: EbayAuth | None = None, search_in_description: bool = True,
                  max_search_calls: int = 500, exclude_category_ids: dict[str, list[str]] | None = None,
-                 category_ids: dict[str, list[str]] | None = None):
+                 category_ids: dict[str, list[str]] | None = None, filter_recommendations: bool = False):
         self.exclude_category_ids = exclude_category_ids or {}
         self.category_ids = category_ids or {}
         self.search_in_description = search_in_description
+        self.filter_recommendations = filter_recommendations
+        self.description_calls = 0
         self.max_search_calls = max_search_calls
         self._page_semaphore = asyncio.Semaphore(max(1, int(concurrency_limit)))
         self.search_calls = 0
@@ -222,7 +226,7 @@ class EbayClient:
         async with self._page_semaphore:
             return await self._request_page(session, site, params)
 
-    async def _request_page(self, session, site: str, params: dict[str, str]) -> dict[str, Any]:
+    async def _request_page(self, session, site: str, params: dict[str, str], *, url=SEARCH_URL) -> dict[str, Any]:
         import aiohttp
 
         retries = 0
@@ -233,12 +237,14 @@ class EbayClient:
             if self.search_calls >= self.max_search_calls:
                 raise BudgetError("Browse call budget exhausted")
             self.search_calls += 1
+            if url != SEARCH_URL:
+                self.description_calls += 1
             generation = self._token_generation
             headers = {"Authorization": f"Bearer {self.token}",
                        "X-EBAY-C-MARKETPLACE-ID": site, "Accept": "application/json"}
             status = None
             try:
-                async with session.get(SEARCH_URL, headers=headers, params=params,
+                async with session.get(url, headers=headers, params=params,
                                        timeout=aiohttp.ClientTimeout(total=30)) as response:
                     status = response.status
                     if response.status == 429:
@@ -267,8 +273,79 @@ class EbayClient:
                 raise SearchRequestError(reason)
             retries += 1
             self.logger.warning("Retrying %s query=%r offset=%s (%s), retry=%s",
-                                site, params["q"], params["offset"], reason, retries)
+                                site, params.get("q", "getItem"), params.get("offset", "-"), reason, retries)
             await asyncio.sleep(retries)
+
+    async def _get_description(self, session, site: str, rest_id: str) -> str:
+        async with self._page_semaphore:
+            data = await self._request_page(session, site, {}, url=ITEM_URL + quote(rest_id, safe=""))
+        if data.get("itemId") != rest_id:
+            raise SearchRequestError("getItem returned a different or missing itemId")
+        description = data.get("description")
+        if not isinstance(description, str) or not description.strip():
+            raise SearchRequestError("getItem returned no full description")
+        return description
+
+    async def _check_recommendations(self, session, outcomes) -> tuple[list[list[dict]], RecommendationStats]:
+        stats = RecommendationStats()
+        cache = {}
+
+        async def fetch(site, rest_id):
+            try:
+                return await self._get_description(session, site, rest_id), ""
+            except (BudgetError, SearchRequestError, RateLimitError) as exc:
+                return None, str(exc)
+            except asyncio.CancelledError:
+                if not self._rate_limited.is_set():
+                    raise
+                return None, "HTTP 429; description checks stopped"
+
+        async def check(outcome, item):
+            groups = outcome.query.positive_groups
+            title = scalar_text(item.get("title"))
+            decision = Decision("uncertain", "unsupported_query_syntax")
+            if groups:
+                if matches(title, groups):
+                    decision = Decision("accepted", "title_matches")
+                else:
+                    rest_id = item.get("itemId")
+                    if not isinstance(rest_id, str) or not rest_id.startswith("v1|"):
+                        decision = Decision("uncertain", "missing_rest_item_id")
+                    else:
+                        key = (outcome.site, rest_id)
+                        if key not in cache:
+                            cache[key] = asyncio.create_task(fetch(*key))
+                        description, error = await cache[key]
+                        if description is None:
+                            decision = Decision("uncertain", error)
+                        else:
+                            decision = check_description(title, description, clean_ebay_id(rest_id), groups)
+            setattr(stats, decision.status, getattr(stats, decision.status) + 1)
+            if decision.status != "accepted":
+                log = self.logger.info if decision.status == "rejected" else self.logger.warning
+                log("Recommendation check %s: site=%s item=%s base=%r reason=%s",
+                    decision.status, outcome.site, clean_ebay_id(item.get("itemId")),
+                    outcome.query.base_name, decision.reason)
+            return decision.status != "rejected"
+
+        pairs = [(outcome, item) for outcome in outcomes for item in outcome.raw_items]
+        tasks = [asyncio.create_task(check(outcome, item)) for outcome, item in pairs]
+        try:
+            keep = await asyncio.gather(*tasks)
+        finally:
+            for task in [*tasks, *cache.values()]:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, *cache.values(), return_exceptions=True)
+        selected = [[] for _ in outcomes]
+        index = {id(outcome): i for i, outcome in enumerate(outcomes)}
+        for (outcome, item), retained in zip(pairs, keep):
+            if retained:
+                selected[index[id(outcome)]].append(item)
+        stats.description_calls = self.description_calls
+        stats.rate_limited = self._rate_limited.is_set()
+        self.logger.info(stats.summary)
+        return selected, stats
 
     async def _search_with_session(self, session, site: str, full_query: str, limit: int = 200,
                                    outcome: QueryOutcome | None = None) -> QueryOutcome:
@@ -363,6 +440,7 @@ class EbayClient:
         import aiohttp
 
         self.search_calls = 0
+        self.description_calls = 0
         self.run_end = int(datetime.now(timezone.utc).timestamp() * 1000)
         self._rate_limited = asyncio.Event()
         self._refresh_lock = asyncio.Lock()
@@ -397,10 +475,15 @@ class EbayClient:
                         task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
 
-        run = SearchRun(outcomes=outcomes)
-        for outcome in outcomes:
+            recommendations = None
+            selected = [outcome.raw_items for outcome in outcomes]
+            if self.filter_recommendations and self.search_in_description:
+                selected, recommendations = await self._check_recommendations(session, outcomes)
+
+        run = SearchRun(outcomes=outcomes, recommendations=recommendations)
+        for outcome, items in zip(outcomes, selected):
             run.items.extend(replace(item, source_site=outcome.site) for item in
-                             parse_search_results(outcome.query.base_name, outcome.raw_items, rates, self.logger))
+                             parse_search_results(outcome.query.base_name, items, rates, self.logger))
             log = self.logger.info if outcome.status == "success" else self.logger.warning
             log("Search %s: %s category=%s query=%r pages=%s reported=%s fetched=%s reason=%s",
                 outcome.status, outcome.site, outcome.category_id or "all", outcome.query.keywords, outcome.pages,

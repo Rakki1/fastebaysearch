@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .config import ConfigError
 from .models import SearchQuery
+from .recommendation_filter import positive_groups
 from .utils import normalize_terms
 
 
@@ -25,6 +26,7 @@ def build_queries(config, max_q_len: int = 100) -> list[SearchQuery]:
                 f"{full_query}. Shorten the terms or split the search configuration."
             )
 
-        queries.append(SearchQuery(keywords=full_query, base_name=base))
+        queries.append(SearchQuery(keywords=full_query, base_name=base,
+                                   positive_groups=positive_groups(base, required_terms)))
 
     return queries

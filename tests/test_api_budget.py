@@ -46,3 +46,12 @@ def test_retry_allowance_and_hard_cap_are_separate_from_normal_estimate():
     assert estimate.calls_per_run_with_retries == 14  # 4 pages x 3 attempts + 2 authentication replays
     assert estimate.calls_per_run_maximum == 500  # Shared per-run cap, including partitions and retries
     assert "OAuth calls (separate from Browse): 0-2" in format_api_budget_estimate(estimate)
+
+
+def test_recommendation_check_cost_is_explicitly_outside_page_estimate():
+    estimate = estimate_api_budget(["EBAY_GB"], [SearchQuery("Anirog", "Anirog")],
+                                   filter_recommendations=True)
+    output = format_api_budget_estimate(estimate)
+    assert estimate.calls_per_run_estimated == 1
+    assert "Description calls are not included" in output
+    assert "shared Browse call cap" in output

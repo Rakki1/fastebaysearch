@@ -25,6 +25,7 @@ class ApiBudgetEstimate:
     possible_runs_per_day_minimum: int
     possible_runs_per_day_estimated: int
     recommended_interval_minutes_estimated: int | None
+    filter_recommendations: bool = False
 
 
 def estimate_api_budget(
@@ -36,6 +37,7 @@ def estimate_api_budget(
     search_limit: int = DEFAULT_SEARCH_LIMIT,
     max_search_calls: int = 500,
     category_ids: dict[str, list[str]] | None = None,
+    filter_recommendations: bool = False,
 ) -> ApiBudgetEstimate:
     sites_count = len(ebay_sites)
     queries_count = len(queries)
@@ -66,6 +68,7 @@ def estimate_api_budget(
         possible_runs_per_day_minimum=runs_minimum,
         possible_runs_per_day_estimated=runs_estimated,
         recommended_interval_minutes_estimated=interval,
+        filter_recommendations=filter_recommendations,
     )
 
 
@@ -75,7 +78,7 @@ def format_api_budget_estimate(estimate: ApiBudgetEstimate) -> str:
         if estimate.recommended_interval_minutes_estimated is not None
         else "not available with the current estimate"
     )
-    return "\n".join(
+    output = "\n".join(
         [
             "eBay API budget estimate",
             f"eBay sites: {estimate.ebay_sites_count}",
@@ -97,6 +100,13 @@ def format_api_budget_estimate(estimate: ApiBudgetEstimate) -> str:
             "The interval uses the normal estimate, not the retry allowance or the maximum result count.",
         ]
     )
+    if estimate.filter_recommendations:
+        output += ("\nRecommendation filtering is enabled. getItem description calls and their retries "
+                   "also use the shared Browse call cap.\n"
+                   "Description calls are not included in the page estimate above: up to one per unique "
+                   "REST item ID and search marketplace needing verification, before retries. "
+                   "The estimated scheduling interval is a lower bound; measure a clean search first.")
+    return output
 
 
 def _estimated_pages_per_query(estimated_results_per_query: int, search_limit: int) -> int:
