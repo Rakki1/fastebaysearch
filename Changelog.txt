@@ -1,5 +1,9 @@
 Unreleased
 
+- Cache confidently checked full descriptions and per-query decisions in SQLite across normal runs, including rejected listings; default expiry is 24 hours and 0 disables caching.
+- Refresh changed listing summaries immediately, keep prices and buying options fresh, retry uncertain checks, and keep --clean-search independent of the cache and database.
+- Include warm-cache search costs and periodic description refreshes in Telegram scheduling budgets; migrate cache and budget tables automatically without changing seen-item or notification history.
+
 - Add a current-configuration scheduling budget to Telegram quota warnings, based on actual calls from recent complete normal runs and the live Analytics limits.
 - Include description calls and retries, keep configuration-specific samples, apply the configured safety margin, and flag insufficient per-run caps without treating partial runs as complete measurements.
 

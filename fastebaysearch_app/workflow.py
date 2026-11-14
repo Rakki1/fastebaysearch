@@ -14,6 +14,7 @@ from .notifications.html_report import HtmlReportNotifier
 from .notifications.telegram import TelegramNotifier
 from .quota_tracking import QuotaMonitor, QuotaStore
 from .run_budget import RuntimeBudget
+from .description_cache import DescriptionCache
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,14 @@ class Workflow:
         return await self._deliver(search_run, monitor)
 
     async def _search(self) -> SearchRun:
+        configure_cache = getattr(self.ebay_client, "configure_description_cache", None)
+        if callable(configure_cache):
+            cache = None
+            if self.config.ebay_description_cache_ttl_hours > 0:
+                cache = DescriptionCache(self.database.connect, self.config.ebay_client_id,
+                                         self.config.ebay_description_cache_ttl_hours, self.logger)
+                cache.prune(time.time())
+            configure_cache(cache)
         rates = self._get_exchange_rates_from_cache()
         if not rates:
             rates = await self.ebay_client.get_exchange_rates()

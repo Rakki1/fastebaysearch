@@ -95,6 +95,7 @@ class AppConfig:
     ebay_filter_recommendations: bool = False
     ebay_validate_search_terms: bool = False
     ebay_check_api_quota: bool = True
+    ebay_description_cache_ttl_hours: int = 24
     ebay_max_search_calls_per_run: int = 500
     ebay_exclude_category_ids: dict[str, list[str]] = field(default_factory=dict)
     ebay_category_ids: dict[str, list[str]] = field(default_factory=dict)
@@ -276,6 +277,8 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
         ebay_filter_recommendations=as_bool(raw.get("ebay_filter_recommendations"), False),
         ebay_validate_search_terms=as_bool(raw.get("ebay_validate_search_terms"), False),
         ebay_check_api_quota=as_bool(raw.get("ebay_check_api_quota"), True),
+        ebay_description_cache_ttl_hours=parse_int(raw.get("ebay_description_cache_ttl_hours"),
+                                                   "ebay_description_cache_ttl_hours", 24, minimum=0),
         ebay_max_search_calls_per_run=parse_int(raw.get("ebay_max_search_calls_per_run"), "ebay_max_search_calls_per_run", 500, minimum=1),
         exclude_terms=normalize_terms(raw.get("exclude_terms")),
         search=search,

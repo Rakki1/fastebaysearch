@@ -43,6 +43,26 @@ def test_load_config_validates_and_resolves_paths(tmp_path):
     assert config.log_max_size_mb == 10
     assert config.ebay_filter_recommendations is False
     assert config.ebay_validate_search_terms is False
+    assert config.ebay_description_cache_ttl_hours == 24
+
+
+@pytest.mark.parametrize("ttl", [0, 6, 24, "48"])
+def test_description_cache_ttl_is_configurable(tmp_path, ttl):
+    data = minimal_config()
+    data["ebay_description_cache_ttl_hours"] = ttl
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert load_config(path, tmp_path).ebay_description_cache_ttl_hours == int(ttl)
+
+
+@pytest.mark.parametrize("ttl", [-1, "invalid"])
+def test_description_cache_rejects_invalid_ttl(tmp_path, ttl):
+    data = minimal_config()
+    data["ebay_description_cache_ttl_hours"] = ttl
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ConfigError, match="ebay_description_cache_ttl_hours"):
+        load_config(path, tmp_path)
 
 
 def test_load_config_enables_recommendation_filter(tmp_path):

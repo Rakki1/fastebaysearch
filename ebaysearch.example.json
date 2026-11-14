@@ -15,6 +15,7 @@
     "ebay_search_in_description": false,
     "ebay_filter_recommendations": false,
     "ebay_validate_search_terms": false,
+    "ebay_description_cache_ttl_hours": 24,
     "ebay_check_api_quota": true,
     "ebay_category_ids": {
         "EBAY_GB": [

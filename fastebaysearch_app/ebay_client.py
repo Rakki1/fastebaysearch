@@ -16,6 +16,7 @@ from typing import Any
 from .ebay_urls import build_item_web_url, normalize_location_country
 from .models import QueryOutcome, RecommendationStats, SearchQuery, SearchResult, SearchRun
 from .recommendation_filter import Decision, check_description, matches, missing_groups
+from .description_cache import DescriptionEntry, summary_fingerprint, validation_key
 from .utils import clean_ebay_id, format_date, safe_url, scalar_text, write_private_json_atomic
 
 TOKEN_URL = "https://api.ebay.com/identity/v1/oauth2/token"
@@ -184,6 +185,7 @@ class EbayClient:
         self.validate_search_terms = validate_search_terms
         self.description_calls = 0
         self._description_locations: dict[tuple[str, str], str] = {}
+        self.description_cache = None
         self.max_search_calls = max_search_calls
         self._page_semaphore = asyncio.Semaphore(max(1, int(concurrency_limit)))
         self.search_calls = 0
@@ -201,6 +203,9 @@ class EbayClient:
     async def get_browse_quota(self):
         from .analytics import get_browse_quota
         return await get_browse_quota(self)
+
+    def configure_description_cache(self, cache):
+        self.description_cache = cache
 
     async def get_exchange_rates(self) -> dict[str, float]:
         import aiohttp
@@ -305,10 +310,23 @@ class EbayClient:
         stats = RecommendationStats(validate_terms=self.validate_search_terms)
         label = "Search term check" if self.validate_search_terms else "Recommendation check"
         cache = {}
+        decisions = {}
+        needed_keys, cache_hits, cache_misses = set(), set(), set()
+        reusable_keys = set()
+        persistent = self.description_cache
 
-        async def fetch(site, rest_id):
+        async def fetch(site, rest_id, fingerprint):
+            if persistent:
+                entry = persistent.get_description(site, rest_id, fingerprint, time.time())
+                if entry is not None:
+                    cache_hits.add((site, rest_id))
+                    reusable_keys.add((site, rest_id))
+                    return entry, ""
+                cache_misses.add((site, rest_id))
             try:
-                return await self._get_description(session, site, rest_id), ""
+                description = await self._get_description(session, site, rest_id)
+                return DescriptionEntry(fingerprint, time.time(), description,
+                                        self._description_locations.get((site, rest_id), "")), ""
             except BudgetError as exc:
                 stats.budget_exhausted = True
                 return None, str(exc)
@@ -318,6 +336,46 @@ class EbayClient:
                 if not self._rate_limited.is_set():
                     raise
                 return None, "HTTP 429; description checks stopped"
+
+        def apply_country(item, country):
+            location = item.get("itemLocation")
+            existing = normalize_location_country(location.get("country")) if isinstance(location, dict) else ""
+            country = normalize_location_country(country)
+            if not existing and country:
+                item["itemLocation"] = {**(location if isinstance(location, dict) else {}), "country": country}
+
+        async def description_decision(outcome, item, groups, title, rest_id):
+            key = (outcome.site, rest_id)
+            needed_keys.add(key)
+            fingerprint = summary_fingerprint(item)
+            rule = validation_key(groups, self.validate_search_terms, self.filter_recommendations)
+            decision_key = (*key, fingerprint, rule)
+            if persistent:
+                cached = persistent.get_decision(*key, fingerprint, rule, time.time())
+                if cached is not None:
+                    decision, country = cached
+                    apply_country(item, country)
+                    cache_hits.add(key)
+                    reusable_keys.add(key)
+                    stats.validation_cache_hits += 1
+                    return decision
+            if key not in cache:
+                cache[key] = asyncio.create_task(fetch(*key, fingerprint))
+            entry, error = await cache[key]
+            apply_country(item, entry.country if entry else self._description_locations.get(key))
+            if entry is None:
+                return Decision("uncertain", error)
+            if decision_key not in decisions:
+                decisions[decision_key] = check_description(
+                    title, entry.description, clean_ebay_id(rest_id), groups,
+                    validate_terms=self.validate_search_terms,
+                    filter_recommendations=self.filter_recommendations,
+                )
+            decision = decisions[decision_key]
+            if persistent and entry.fingerprint == fingerprint:
+                if persistent.put(*key, entry, rule, decision):
+                    reusable_keys.add(key)
+            return decision
 
         async def check(outcome, item):
             groups = outcome.query.positive_groups
@@ -333,24 +391,7 @@ class EbayClient:
                     if not isinstance(rest_id, str) or not rest_id.startswith("v1|"):
                         decision = Decision("uncertain", "missing_rest_item_id")
                     else:
-                        key = (outcome.site, rest_id)
-                        if key not in cache:
-                            cache[key] = asyncio.create_task(fetch(*key))
-                        description, error = await cache[key]
-                        location = item.get("itemLocation")
-                        country = normalize_location_country(location.get("country")) if isinstance(location, dict) else ""
-                        detail_country = self._description_locations.get(key)
-                        if not country and detail_country:
-                            item["itemLocation"] = {**(location if isinstance(location, dict) else {}),
-                                                    "country": detail_country}
-                        if description is None:
-                            decision = Decision("uncertain", error)
-                        else:
-                            decision = check_description(
-                                title, description, clean_ebay_id(rest_id), groups,
-                                validate_terms=self.validate_search_terms,
-                                filter_recommendations=self.filter_recommendations,
-                            )
+                        decision = await description_decision(outcome, item, groups, title, rest_id)
             if self.validate_search_terms and decision.status == "uncertain":
                 decision = replace(decision, status="deferred")
             setattr(stats, decision.status, getattr(stats, decision.status) + 1)
@@ -376,8 +417,16 @@ class EbayClient:
             if retained:
                 selected[index[id(outcome)]].append(item)
         stats.description_calls = self.description_calls
+        stats.description_cache_entries = len(needed_keys)
+        stats.description_cache_hits = len(cache_hits)
+        stats.description_cache_misses = len(cache_misses)
+        stats.description_cache_uncached_entries = len(needed_keys - reusable_keys) if persistent else 0
         stats.rate_limited = self._rate_limited.is_set()
         self.logger.info(stats.summary)
+        if persistent:
+            self.logger.info("Description cache: hits=%s misses=%s entries=%s validation_hits=%s ttl_hours=%s",
+                             stats.description_cache_hits, stats.description_cache_misses,
+                             stats.description_cache_entries, stats.validation_cache_hits, persistent.ttl_hours)
         return selected, stats
 
     async def _search_with_session(self, session, site: str, full_query: str, limit: int = 200,
@@ -514,7 +563,9 @@ class EbayClient:
             if self.validate_search_terms or (self.filter_recommendations and self.search_in_description):
                 selected, recommendations = await self._check_recommendations(session, outcomes)
 
-        run = SearchRun(outcomes=outcomes, recommendations=recommendations, browse_calls=self.search_calls)
+        run = SearchRun(outcomes=outcomes, recommendations=recommendations, browse_calls=self.search_calls,
+                        description_calls=self.description_calls,
+                        description_cache_ttl_hours=self.description_cache.ttl_hours if self.description_cache else 0)
         for outcome, items in zip(outcomes, selected):
             run.items.extend(replace(item, source_site=outcome.site) for item in
                              parse_search_results(outcome.query.base_name, items, rates, self.logger))

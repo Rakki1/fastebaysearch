@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .models import SearchResult
 from .ebay_urls import build_item_web_url
-from . import change_tracking, quota_tracking
+from . import change_tracking, quota_tracking, description_cache
 from .utils import utc_now_str
 
 SQLITE_VARIABLE_LIMIT = 900
@@ -88,6 +88,7 @@ class Database:
             self._ensure_ebayids_columns(cur)
             change_tracking.migrate(cur)
             quota_tracking.migrate(cur)
+            description_cache.migrate(cur)
             _execute_schema_statements(cur,
                 """
                 CREATE INDEX IF NOT EXISTS idx_item_id ON ebayids (item_id);

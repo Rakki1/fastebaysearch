@@ -97,6 +97,7 @@ def test_changed_search_configuration_does_not_reuse_previous_measurement(tmp_pa
     for changed in [replace(original, ebay_search_in_description=False),
                     replace(original, ebay_filter_recommendations=True),
                     replace(original, ebay_validate_search_terms=True),
+                    replace(original, ebay_description_cache_ttl_hours=0),
                     replace(original, ebay_buying_options=["AUCTION"]),
                     replace(original, ebay_category_ids={"EBAY_US": ["1249"]}),
                     replace(original, ebay_exclude_category_ids={"EBAY_US": ["42"]})]:
@@ -180,3 +181,67 @@ def test_legacy_recommendation_cap_is_not_a_complete_budget_measurement(monkeypa
     budget = measured_budget(tmp_path)
     budget.record(result, NOW)
     assert "has not been measured" in budget.summary(quota(), NOW)
+
+
+def cached_run(description_calls=463, uncached=0):
+    return SearchRun(browse_calls=78 + description_calls, description_calls=description_calls,
+                     description_cache_ttl_hours=24, recommendations=RecommendationStats(
+                         description_cache_entries=463, description_cache_misses=description_calls,
+                         description_cache_uncached_entries=uncached))
+
+
+def test_cache_budget_reserves_daily_refresh_and_allows_48_runs():
+    assert scheduling_capacity(quota(), 78, 90, refresh_calls=463, cache_ttl_hours=24) == (58, 49, 29)
+    # Shorter lifetimes need more refreshes; short quota windows must fit a whole refresh.
+    assert scheduling_capacity(quota(), 78, 90, refresh_calls=463, cache_ttl_hours=6) == (40, 32, 44)
+    short_window = BrowseQuota((QuotaRate(500, 0, 500, NOW + 3600, 3600),))
+    assert scheduling_capacity(short_window, 78, 90, refresh_calls=463, cache_ttl_hours=24) == (0, 0, None)
+
+
+def test_cold_and_warm_runs_use_the_same_refresh_reserve(tmp_path):
+    budget = measured_budget(tmp_path)
+    budget.record(cached_run(), NOW)
+    budget.record(cached_run(description_calls=0), NOW + 1800)
+    summary = budget.summary(quota(), NOW + 1800)
+    assert "541 Browse calls" in summary
+    assert "Warm-cache base: 78 calls/run" in summary
+    assert "463 description calls per 24h" in summary
+    assert "Initial filling can cost 541 calls" in summary
+    assert "Recommended: 49 complete runs/24h" in summary
+    assert "29 minutes" in summary
+    assert "cap 500 is below" in summary
+
+
+def test_uncacheable_descriptions_are_budgeted_every_run(tmp_path):
+    budget = measured_budget(tmp_path)
+    budget.record(cached_run(uncached=20), NOW)
+    summary = budget.summary(quota(), NOW)
+    assert "Warm-cache base: 98 calls/run" in summary
+    assert "443 description calls per 24h" in summary
+    assert "Recommended: 40 complete runs/24h" in summary
+
+
+def test_description_retries_are_included_in_refresh_reserve(tmp_path):
+    budget = measured_budget(tmp_path)
+    run = cached_run(description_calls=926)
+    run.recommendations.description_cache_misses = 463
+    budget.record(run, NOW)
+    summary = budget.summary(quota(), NOW)
+    assert "Warm-cache base: 78 calls/run" in summary
+    assert "926 description calls per 24h" in summary
+    assert "Initial filling can cost 1004 calls" in summary
+
+
+def test_migrating_old_budget_rows_preserves_cost_samples(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.db"
+    with sqlite3.connect(path) as conn:
+        conn.execute("CREATE TABLE api_run_costs (id INTEGER PRIMARY KEY, app_key TEXT NOT NULL, "
+                     "profile TEXT NOT NULL, observed_at REAL NOT NULL, calls INTEGER NOT NULL)")
+        conn.execute("INSERT INTO api_run_costs VALUES (1,'app','profile',?,541)", (NOW,))
+    database = Database(path)
+    database.ensure_schema()
+    database.ensure_schema()
+    with database.connect() as conn:
+        row = conn.execute("SELECT calls,base_calls,refresh_calls FROM api_run_costs").fetchone()
+        assert row == (541, None, None)

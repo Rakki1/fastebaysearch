@@ -18,6 +18,10 @@ def migrate(cur):
     cur.execute("""CREATE TABLE IF NOT EXISTS api_run_costs (
         id INTEGER PRIMARY KEY, app_key TEXT NOT NULL, profile TEXT NOT NULL,
         observed_at REAL NOT NULL, calls INTEGER NOT NULL)""")
+    columns = {row[1] for row in cur.execute("PRAGMA table_info(api_run_costs)")}
+    for column in ("base_calls", "cache_entries", "refresh_calls", "cache_ttl_hours"):
+        if column not in columns:
+            cur.execute(f"ALTER TABLE api_run_costs ADD COLUMN {column} INTEGER")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_api_run_costs ON api_run_costs(app_key, profile, id)")
 
 
@@ -72,20 +76,27 @@ class QuotaStore:
                           state.telegram_notified_at, state.claim_until))
             return state
 
-    def record_run_cost(self, profile, calls, now):
+    def record_run_cost(self, profile, calls, now, *, base_calls=None, cache_entries=None,
+                        refresh_calls=None, cache_ttl_hours=None):
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute("INSERT INTO api_run_costs(app_key,profile,observed_at,calls) VALUES (?,?,?,?)",
-                         (self.key, profile, now, calls))
+            conn.execute("INSERT INTO api_run_costs(app_key,profile,observed_at,calls,base_calls,cache_entries,refresh_calls,cache_ttl_hours) "
+                         "VALUES (?,?,?,?,?,?,?,?)", (self.key, profile, now, calls, base_calls,
+                                                     cache_entries, refresh_calls, cache_ttl_hours))
             conn.execute("DELETE FROM api_run_costs WHERE app_key=? AND profile=? AND id NOT IN "
                          "(SELECT id FROM api_run_costs WHERE app_key=? AND profile=? ORDER BY id DESC LIMIT ?)",
                          (self.key, profile, self.key, profile, SAMPLE_LIMIT))
 
     def run_costs(self, profile, now):
+        return [sample["calls"] for sample in self.run_cost_samples(profile, now)]
+
+    def run_cost_samples(self, profile, now):
         with self.connect() as conn:
-            return [row[0] for row in conn.execute(
-                "SELECT calls FROM api_run_costs WHERE app_key=? AND profile=? AND observed_at>=? "
-                "ORDER BY id DESC LIMIT ?", (self.key, profile, now - SAMPLE_MAX_AGE, SAMPLE_LIMIT))]
+            return [dict(zip(("calls", "base_calls", "cache_entries", "refresh_calls", "cache_ttl_hours"), row))
+                    for row in conn.execute(
+                        "SELECT calls,base_calls,cache_entries,refresh_calls,cache_ttl_hours FROM api_run_costs "
+                        "WHERE app_key=? AND profile=? AND observed_at>=? ORDER BY id DESC LIMIT ?",
+                        (self.key, profile, now - SAMPLE_MAX_AGE, SAMPLE_LIMIT))]
 
     def clear(self, episode_id):
         with self.connect() as conn:

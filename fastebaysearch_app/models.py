@@ -60,6 +60,11 @@ class RecommendationStats:
     deferred: int = 0
     validate_terms: bool = False
     budget_exhausted: bool = False
+    description_cache_hits: int = 0
+    description_cache_misses: int = 0
+    description_cache_entries: int = 0
+    validation_cache_hits: int = 0
+    description_cache_uncached_entries: int = 0
 
     @property
     def summary(self) -> str:
@@ -78,6 +83,8 @@ class SearchRun:
     quota_blocked: bool = False
     quota_message: str = ""
     browse_calls: int | None = None
+    description_calls: int = 0
+    description_cache_ttl_hours: int = 0
 
     @property
     def exit_code(self) -> int:
