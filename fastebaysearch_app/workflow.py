@@ -13,6 +13,7 @@ from .notifications.email import EmailNotifier
 from .notifications.html_report import HtmlReportNotifier
 from .notifications.telegram import TelegramNotifier
 from .quota_tracking import QuotaMonitor, QuotaStore
+from .run_budget import RuntimeBudget
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,8 @@ class Workflow:
         fetch_quota = getattr(self.ebay_client, "get_browse_quota", None)
         monitor = (QuotaMonitor(QuotaStore(self.database.connect, self.config.ebay_client_id), fetch_quota, self.logger)
                    if self.config.ebay_check_api_quota and callable(fetch_quota) else None)
+        if monitor:
+            monitor.budget = RuntimeBudget(monitor.store, self.config, self.queries)
         blocked = await monitor.before_search() if monitor else None
         if blocked:
             search_run = SearchRun(quota_blocked=True, quota_message=blocked.message)
@@ -195,6 +198,8 @@ class Workflow:
 
 def log_summary(logger: logging.Logger, result: WorkflowResult, start_time: float) -> None:
     logger.info(result.search_run.summary)
+    if result.search_run.browse_calls is not None:
+        logger.info("Browse API calls, including descriptions and retries: %s", result.search_run.browse_calls)
     for error in result.notification_errors:
         logger.error(error)
     raw_count = (sum(len(outcome.raw_items) for outcome in result.search_run.outcomes)

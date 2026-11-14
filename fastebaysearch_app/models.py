@@ -59,6 +59,7 @@ class RecommendationStats:
     rate_limited: bool = False
     deferred: int = 0
     validate_terms: bool = False
+    budget_exhausted: bool = False
 
     @property
     def summary(self) -> str:
@@ -76,6 +77,7 @@ class SearchRun:
     recommendations: RecommendationStats | None = None
     quota_blocked: bool = False
     quota_message: str = ""
+    browse_calls: int | None = None
 
     @property
     def exit_code(self) -> int:

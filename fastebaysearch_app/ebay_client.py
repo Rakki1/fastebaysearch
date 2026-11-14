@@ -309,7 +309,10 @@ class EbayClient:
         async def fetch(site, rest_id):
             try:
                 return await self._get_description(session, site, rest_id), ""
-            except (BudgetError, SearchRequestError, RateLimitError) as exc:
+            except BudgetError as exc:
+                stats.budget_exhausted = True
+                return None, str(exc)
+            except (SearchRequestError, RateLimitError) as exc:
                 return None, str(exc)
             except asyncio.CancelledError:
                 if not self._rate_limited.is_set():
@@ -511,7 +514,7 @@ class EbayClient:
             if self.validate_search_terms or (self.filter_recommendations and self.search_in_description):
                 selected, recommendations = await self._check_recommendations(session, outcomes)
 
-        run = SearchRun(outcomes=outcomes, recommendations=recommendations)
+        run = SearchRun(outcomes=outcomes, recommendations=recommendations, browse_calls=self.search_calls)
         for outcome, items in zip(outcomes, selected):
             run.items.extend(replace(item, source_site=outcome.site) for item in
                              parse_search_results(outcome.query.base_name, items, rates, self.logger))

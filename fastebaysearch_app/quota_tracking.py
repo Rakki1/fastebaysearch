@@ -7,6 +7,7 @@ import uuid
 from dataclasses import dataclass
 
 from .analytics import AnalyticsError, BrowseQuota, format_reset
+from .run_budget import SAMPLE_LIMIT, SAMPLE_MAX_AGE
 
 
 def migrate(cur):
@@ -14,6 +15,10 @@ def migrate(cur):
         app_key TEXT PRIMARY KEY, episode_id TEXT NOT NULL, reset_at REAL,
         next_check_at REAL NOT NULL, message TEXT NOT NULL,
         telegram_notified_at REAL, claim_until REAL)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS api_run_costs (
+        id INTEGER PRIMARY KEY, app_key TEXT NOT NULL, profile TEXT NOT NULL,
+        observed_at REAL NOT NULL, calls INTEGER NOT NULL)""")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_api_run_costs ON api_run_costs(app_key, profile, id)")
 
 
 @dataclass(frozen=True)
@@ -40,7 +45,7 @@ class QuotaStore:
         with self.connect() as conn:
             return self._read(conn)
 
-    def block(self, quota: BrowseQuota | None, now: float):
+    def block(self, quota: BrowseQuota | None, now: float, budget_summary: str = ""):
         reset = quota.reset_at(now) if quota and quota.exhausted else None
         details = quota.summary() if quota else "Browse API returned HTTP 429; quota details unavailable."
         if quota and not quota.exhausted:
@@ -50,6 +55,8 @@ class QuotaStore:
             message += "\nSearches resume at the next scheduled run after " + format_reset(reset) + "."
         else:
             message += "\nA reliable reset time is unavailable. The limit will be checked again on a later scheduled run."
+        if budget_summary:
+            message += "\n\n" + budget_summary
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             old = self._read(conn)
@@ -64,6 +71,21 @@ class QuotaStore:
                          (self.key, state.episode_id, state.reset_at, state.next_check_at, state.message,
                           state.telegram_notified_at, state.claim_until))
             return state
+
+    def record_run_cost(self, profile, calls, now):
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("INSERT INTO api_run_costs(app_key,profile,observed_at,calls) VALUES (?,?,?,?)",
+                         (self.key, profile, now, calls))
+            conn.execute("DELETE FROM api_run_costs WHERE app_key=? AND profile=? AND id NOT IN "
+                         "(SELECT id FROM api_run_costs WHERE app_key=? AND profile=? ORDER BY id DESC LIMIT ?)",
+                         (self.key, profile, self.key, profile, SAMPLE_LIMIT))
+
+    def run_costs(self, profile, now):
+        with self.connect() as conn:
+            return [row[0] for row in conn.execute(
+                "SELECT calls FROM api_run_costs WHERE app_key=? AND profile=? AND observed_at>=? "
+                "ORDER BY id DESC LIMIT ?", (self.key, profile, now - SAMPLE_MAX_AGE, SAMPLE_LIMIT))]
 
     def clear(self, episode_id):
         with self.connect() as conn:
@@ -90,6 +112,11 @@ class QuotaMonitor:
     def __init__(self, store, fetch, logger, clock=time.time):
         self.store, self.fetch, self.logger, self.clock = store, fetch, logger, clock
         self.active = None
+        self.budget = None
+
+    def _block(self, quota, now):
+        summary = self.budget.summary(quota, now) if self.budget else ""
+        return self.store.block(quota, now, summary)
 
     async def _fetch(self):
         try:
@@ -108,13 +135,15 @@ class QuotaMonitor:
             return self.active
         quota = await self._fetch()
         if quota and quota.exhausted:
-            self.active = self.store.block(quota, now)
+            self.active = self._block(quota, now)
             return self.active
         return None
 
     async def after_search(self, run):
+        if self.budget:
+            self.budget.record(run, self.clock())
         if run.exit_code == 2:
-            self.active = self.store.block(await self._fetch(), self.clock())
+            self.active = self._block(await self._fetch(), self.clock())
             run.quota_message = self.active.message
         elif self.active and (run.items or any(outcome.pages for outcome in run.outcomes)):
             self.store.clear(self.active.episode_id)
