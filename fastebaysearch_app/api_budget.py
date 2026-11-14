@@ -26,6 +26,7 @@ class ApiBudgetEstimate:
     possible_runs_per_day_estimated: int
     recommended_interval_minutes_estimated: int | None
     filter_recommendations: bool = False
+    validate_search_terms: bool = False
 
 
 def estimate_api_budget(
@@ -38,6 +39,7 @@ def estimate_api_budget(
     max_search_calls: int = 500,
     category_ids: dict[str, list[str]] | None = None,
     filter_recommendations: bool = False,
+    validate_search_terms: bool = False,
 ) -> ApiBudgetEstimate:
     sites_count = len(ebay_sites)
     queries_count = len(queries)
@@ -69,6 +71,7 @@ def estimate_api_budget(
         possible_runs_per_day_estimated=runs_estimated,
         recommended_interval_minutes_estimated=interval,
         filter_recommendations=filter_recommendations,
+        validate_search_terms=validate_search_terms,
     )
 
 
@@ -100,8 +103,9 @@ def format_api_budget_estimate(estimate: ApiBudgetEstimate) -> str:
             "The interval uses the normal estimate, not the retry allowance or the maximum result count.",
         ]
     )
-    if estimate.filter_recommendations:
-        output += ("\nRecommendation filtering is enabled. getItem description calls and their retries "
+    if estimate.filter_recommendations or estimate.validate_search_terms:
+        mode = "Search-term validation" if estimate.validate_search_terms else "Recommendation filtering"
+        output += (f"\n{mode} is enabled. getItem description calls and their retries "
                    "also use the shared Browse call cap.\n"
                    "Description calls are not included in the page estimate above: up to one per unique "
                    "REST item ID and search marketplace needing verification, before retries. "

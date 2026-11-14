@@ -15,7 +15,7 @@ from typing import Any
 
 from .ebay_urls import build_item_web_url
 from .models import QueryOutcome, RecommendationStats, SearchQuery, SearchResult, SearchRun
-from .recommendation_filter import Decision, check_description, matches
+from .recommendation_filter import Decision, check_description, matches, missing_groups
 from .utils import clean_ebay_id, format_date, safe_url, scalar_text, write_private_json_atomic
 
 TOKEN_URL = "https://api.ebay.com/identity/v1/oauth2/token"
@@ -171,11 +171,13 @@ class EbayClient:
     def __init__(self, token: str, logger: logging.Logger | None = None, concurrency_limit: int = 8,
                  buying_options: list[str] | None = None, auth: EbayAuth | None = None, search_in_description: bool = True,
                  max_search_calls: int = 500, exclude_category_ids: dict[str, list[str]] | None = None,
-                 category_ids: dict[str, list[str]] | None = None, filter_recommendations: bool = False):
+                 category_ids: dict[str, list[str]] | None = None, filter_recommendations: bool = False,
+                 validate_search_terms: bool = False):
         self.exclude_category_ids = exclude_category_ids or {}
         self.category_ids = category_ids or {}
         self.search_in_description = search_in_description
         self.filter_recommendations = filter_recommendations
+        self.validate_search_terms = validate_search_terms
         self.description_calls = 0
         self.max_search_calls = max_search_calls
         self._page_semaphore = asyncio.Semaphore(max(1, int(concurrency_limit)))
@@ -287,7 +289,8 @@ class EbayClient:
         return description
 
     async def _check_recommendations(self, session, outcomes) -> tuple[list[list[dict]], RecommendationStats]:
-        stats = RecommendationStats()
+        stats = RecommendationStats(validate_terms=self.validate_search_terms)
+        label = "Search term check" if self.validate_search_terms else "Recommendation check"
         cache = {}
 
         async def fetch(site, rest_id):
@@ -307,6 +310,8 @@ class EbayClient:
             if groups:
                 if matches(title, groups):
                     decision = Decision("accepted", "title_matches")
+                elif self.validate_search_terms and not self.search_in_description:
+                    decision = Decision("rejected", "missing_positive_terms", missing_groups((title,), groups))
                 else:
                     rest_id = item.get("itemId")
                     if not isinstance(rest_id, str) or not rest_id.startswith("v1|"):
@@ -319,14 +324,20 @@ class EbayClient:
                         if description is None:
                             decision = Decision("uncertain", error)
                         else:
-                            decision = check_description(title, description, clean_ebay_id(rest_id), groups)
+                            decision = check_description(
+                                title, description, clean_ebay_id(rest_id), groups,
+                                validate_terms=self.validate_search_terms,
+                                filter_recommendations=self.filter_recommendations,
+                            )
+            if self.validate_search_terms and decision.status == "uncertain":
+                decision = replace(decision, status="deferred")
             setattr(stats, decision.status, getattr(stats, decision.status) + 1)
             if decision.status != "accepted":
                 log = self.logger.info if decision.status == "rejected" else self.logger.warning
-                log("Recommendation check %s: site=%s item=%s base=%r reason=%s",
-                    decision.status, outcome.site, clean_ebay_id(item.get("itemId")),
-                    outcome.query.base_name, decision.reason)
-            return decision.status != "rejected"
+                log("%s %s: site=%s item=%s base=%r reason=%s missing=%s",
+                    label, decision.status, outcome.site, clean_ebay_id(item.get("itemId")),
+                    outcome.query.base_name, decision.reason, decision.missing_groups)
+            return decision.status in ("accepted", "uncertain")
 
         pairs = [(outcome, item) for outcome in outcomes for item in outcome.raw_items]
         tasks = [asyncio.create_task(check(outcome, item)) for outcome, item in pairs]
@@ -477,7 +488,7 @@ class EbayClient:
 
             recommendations = None
             selected = [outcome.raw_items for outcome in outcomes]
-            if self.filter_recommendations and self.search_in_description:
+            if self.validate_search_terms or (self.filter_recommendations and self.search_in_description):
                 selected, recommendations = await self._check_recommendations(session, outcomes)
 
         run = SearchRun(outcomes=outcomes, recommendations=recommendations)

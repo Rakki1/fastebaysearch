@@ -1,4 +1,4 @@
-"""Conservative detection of matches contributed only by known recommendation HTML."""
+"""Validate positive search terms and remove recognized recommendation HTML."""
 from __future__ import annotations
 
 import re
@@ -77,9 +77,15 @@ def positive_groups(base: str, required: list[str]) -> PositiveGroups | None:
 
 
 def matches(text: str, groups: PositiveGroups) -> bool:
-    text = normalize(text)
-    return all(any(re.search(r"(?<!\w)" + re.escape(term) + r"(?!\w)", text)
-                   for term in group) for group in groups)
+    return not missing_groups((text,), groups)
+
+
+def missing_groups(texts: tuple[str, ...], groups: PositiveGroups) -> PositiveGroups:
+    """Each phrase must fit within one field; separate AND words may span fields."""
+    normalized = tuple(normalize(text) for text in texts)
+    return tuple(group for group in groups
+                 if not any(re.search(r"(?<!\w)" + re.escape(term) + r"(?!\w)", text)
+                            for term in group for text in normalized))
 
 
 class DivBalance(HTMLParser):
@@ -107,10 +113,12 @@ class DivBalance(HTMLParser):
 class Decision:
     status: str
     reason: str
+    missing_groups: PositiveGroups = ()
 
 
 def check_description(title: str, description: str, item_id: str,
-                      groups: PositiveGroups) -> Decision:
+                      groups: PositiveGroups, *, validate_terms: bool = False,
+                      filter_recommendations: bool = True) -> Decision:
     balance = DivBalance()
     balance.feed(description)
     balance.close()
@@ -119,8 +127,8 @@ def check_description(title: str, description: str, item_id: str,
     soup = BeautifulSoup(description, "html.parser")
     for tag in soup.select("script, style, template"):
         tag.decompose()
-    blocks = soup.select("div.wi-recommendations")
-    if not blocks:
+    blocks = soup.select("div.wi-recommendations") if filter_recommendations else []
+    if not blocks and not validate_terms:
         return Decision("uncertain", "no_supported_recommendations")
     for block in blocks:
         cards = block.select(".wi-recommendation")
@@ -144,14 +152,23 @@ def check_description(title: str, description: str, item_id: str,
                 known.decompose()
         if remainder.get_text(" ", strip=True):
             return Decision("uncertain", "unexpected_text_in_recommendations")
-    original = title + " " + soup.get_text(" ", strip=True)
-    if not matches(original, groups):
+    original_body = soup.get_text(" ", strip=True)
+    original = title + " " + original_body
+    if not validate_terms and not matches(original, groups):
         return Decision("uncertain", "original_text_does_not_match")
     for block in blocks:
         if block.parent is not None:
             block.decompose()
-    cleaned = title + " " + soup.get_text(" ", strip=True)
-    if not normalize(soup.get_text(" ", strip=True)):
+    cleaned_body = soup.get_text(" ", strip=True)
+    if validate_terms:
+        if not normalize(original_body):
+            return Decision("uncertain", "empty_description_text")
+        missing = missing_groups((title, cleaned_body), groups)
+        if missing:
+            return Decision("rejected", "missing_positive_terms", missing)
+        return Decision("accepted", "all_positive_terms_match")
+    cleaned = title + " " + cleaned_body
+    if not normalize(cleaned_body):
         return Decision("uncertain", "empty_cleaned_description")
     if matches(cleaned, groups):
         return Decision("accepted", "matches_without_recommendations")

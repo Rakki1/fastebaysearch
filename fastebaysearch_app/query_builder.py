@@ -26,7 +26,12 @@ def build_queries(config, max_q_len: int = 100) -> list[SearchQuery]:
                 f"{full_query}. Shorten the terms or split the search configuration."
             )
 
-        queries.append(SearchQuery(keywords=full_query, base_name=base,
-                                   positive_groups=positive_groups(base, required_terms)))
+        groups = positive_groups(base, required_terms)
+        if getattr(config, "ebay_validate_search_terms", False) and groups is None:
+            raise ConfigError(
+                f"Cannot validate search terms for {base!r}: unsupported positive keyword syntax. "
+                "Use ordinary words, quoted phrases, or comma-separated alternatives in parentheses."
+            )
+        queries.append(SearchQuery(keywords=full_query, base_name=base, positive_groups=groups))
 
     return queries

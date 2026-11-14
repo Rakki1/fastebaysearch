@@ -1,5 +1,9 @@
 Unreleased
 
+- Add opt-in ebay_validate_search_terms: require every positive AND word and one alternative from each OR group, even without recommendation blocks.
+- Keep quoted phrases within one field, defer unverifiable results without saving them as seen, and report missing terms and partial verification runs.
+- Preserve existing behavior when validation is disabled; no database migration or rechecking of old notification queues.
+
 - Add opt-in ebay_filter_recommendations: verify full Browse descriptions and reject matches caused only by recognized wi-recommendations product cards.
 - Retain uncertain matches, share the Browse call cap and retry policy with description checks, and report verification counts in logs and HTML previews.
 - Apply checks before new-result storage in normal and clean-search runs; preserve existing records and notification queues.

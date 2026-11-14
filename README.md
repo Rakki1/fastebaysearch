@@ -200,6 +200,7 @@ Settings are top-level JSON fields unless shown with a dotted path. See [ebaysea
 | `ebay_buying_options` | `["FIXED_PRICE", "AUCTION"]` by default; either value alone restricts the listing format. |
 | `ebay_search_in_description` | `true`: search titles and descriptions. Set `false` for title search. The example uses `false`; defaults to `true` when omitted. |
 | `ebay_filter_recommendations` | Default `false`. With description search enabled, check full descriptions for matches contributed only by recognized recommendation blocks. |
+| `ebay_validate_search_terms` | Default `false`. Require every positive search condition locally before accepting a result; skip unverifiable results and report the run as partial. |
 | `ebay_search_keywords.base_terms` | Each expression generates a query on every configured marketplace. |
 | `ebay_search_keywords.required_terms` | At least one alternative must match. Use `[]` to omit the restriction. |
 | `exclude_terms` | Exclusions appended to every query. |
@@ -311,9 +312,29 @@ To keep description search while removing known recommendation-only matches, ena
 
 Items whose titles satisfy all positive search terms need no additional call. Other items are checked using the full HTML description from Browse `getItem`, cached once per REST item ID and search marketplace during the run. The first supported layout is `div.wi-recommendations` with product cards linking to other eBay items. The checker removes only recognized blocks, preserving description text before and after them. It rejects a match only when the positive terms match the original text but fail after removing recommendations. It supports ordinary AND terms, quoted phrases, comma-separated OR groups and the configured required-term alternatives; negative terms and exclusions remain eBay's responsibility.
 
-Missing descriptions, unfamiliar layouts or query syntax, malformed HTML and failed requests retain the match and log the reason. The check is conservative rather than a guarantee against all irrelevant results. No supported block also counts as uncertain. The run summary reports accepted, rejected and uncertain checks plus description-call attempts; these counts are before final item-ID deduplication. Ordinary verification failures do not change a successful search's exit code; HTTP 429 still returns `2` and stops new API requests.
+With `ebay_validate_search_terms` disabled, missing descriptions, unfamiliar layouts or query syntax, malformed HTML and failed requests retain the match and log the reason. The check is conservative rather than a guarantee against all irrelevant results. No supported block also counts as uncertain. The run summary reports accepted, rejected and uncertain checks plus description-call attempts; these counts are before final item-ID deduplication. Ordinary verification failures do not change a successful search's exit code; HTTP 429 still returns `2` and stops new API requests.
 
 Filtering happens before saving new results, for both normal runs and `--clean-search`. Existing database records and notification queues are not rechecked or removed. For a first trial, use a separate configuration with one marketplace and one base term, disable email/Telegram and run `--clean-search`. Its local HTML report does not mark items seen or consume later notifications. Set `ebay_filter_recommendations` back to `false` to disable the feature.
+
+### Requiring all positive search terms
+
+Enable local validation to reject eBay results that do not satisfy the search terms, including descriptions without recommendation blocks:
+
+```json
+{
+  "ebay_search_in_description": true,
+  "ebay_filter_recommendations": true,
+  "ebay_validate_search_terms": true
+}
+```
+
+For base term `Battle Through Time` and required terms `["commodore", "c64", "c-64"]`, all three words **battle AND through AND time**, plus at least one platform alternative, must appear. Ordinary words may occur in any order and across the title and description. Quoted phrases must occur consecutively within a single field; comma-separated groups such as `(Slapshot, "Slap Shot")` remain alternatives. Matching ignores case, normalizes Unicode and whitespace, and uses word boundaries without synonyms or fuzzy matching. Negative terms and exclusions remain eBay's responsibility. Unsupported positive query syntax is a configuration error before API calls.
+
+A title satisfying every condition is accepted without a description call. Otherwise, with description search enabled, validation uses the complete description after removing scripts, styles and, if `ebay_filter_recommendations` is enabled, verified recommendation blocks. Missing positive conditions reject the result even if no recommendation block exists. With description search disabled, only the title is checked and no description is fetched. Turning recommendation filtering off does not turn search-term validation off.
+
+Unverifiable results are **deferred for this run**, not accepted: this includes failed or missing full descriptions, malformed HTML, ambiguous recognized recommendation blocks, and an exhausted Browse call budget. They are not saved as seen or queued for notification. The run returns `1` (`2` on HTTP 429); accepted results can still be delivered. If a later search returns the item, it can be checked again. There is no durable retry queue or guarantee of later rediscovery. A complete description containing only an unknown recommendation layout may still match; only the documented layout is removed.
+
+The log and report show `Search term check: accepted=..., rejected=..., deferred=..., description_calls=...`. Counts are per search result before final item-ID deduplication; rejection logs name the missing word or alternative groups. A result accepted by one search can survive another search's rejection. Existing database records and pending notifications are unchanged and may still produce old false positives. No database migration is required. Set `ebay_validate_search_terms` to `false` to restore the previous behavior.
 
 Temporary API failures receive up to two retries; authentication errors allow one shared token refresh. Rate limiting stops outstanding searches. Results already received are retained, and incomplete runs are identified in logs and notifications.
 
@@ -333,7 +354,7 @@ These optional fields control the estimate:
 
 Run `--estimate-api-budget` using the commands in [First HTML search](#first-html-search). The estimate uses the number of marketplaces, generated queries and expected result pages. Each marketplace/query combination makes a separate request for each page; a run is not one API call for all marketplaces.
 
-When recommendation filtering is enabled, description calls and their retries share the same per-run Browse cap as search calls. They are not included in the page-based estimate or scheduling interval: measure a clean search before scheduling. If no call budget remains for verification, unchecked matches are retained and logged as uncertain.
+When recommendation filtering or search-term validation is enabled, description calls and their retries share the same per-run Browse cap as search calls. They are not included in the page-based estimate or scheduling interval: measure a clean search before scheduling. If no call budget remains for verification, validation defers unchecked matches; recommendation filtering alone retains them as uncertain.
 
 The output shows estimated calls per run, possible runs per day and a recommended interval. It also shows a retry allowance at the estimated page count and the configured per-run Browse call cap. OAuth calls are separate (0–2 per run). The recommended interval uses the normal estimate; allow headroom for retries, other applications using the same quota and higher result counts. Automatic time-range splitting can increase usage beyond the estimate. The 500-call cap is per run, not a daily quota controller.
 

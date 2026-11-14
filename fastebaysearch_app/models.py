@@ -56,9 +56,14 @@ class RecommendationStats:
     uncertain: int = 0
     description_calls: int = 0
     rate_limited: bool = False
+    deferred: int = 0
+    validate_terms: bool = False
 
     @property
     def summary(self) -> str:
+        if self.validate_terms:
+            return (f"Search term check: accepted={self.accepted}, rejected={self.rejected}, "
+                    f"deferred={self.deferred}, description_calls={self.description_calls}")
         return (f"Recommendation check: accepted={self.accepted}, rejected={self.rejected}, "
                 f"uncertain={self.uncertain}, description_calls={self.description_calls}")
 
@@ -74,7 +79,8 @@ class SearchRun:
         if (any(outcome.status == "rate_limited" for outcome in self.outcomes)
                 or (self.recommendations and self.recommendations.rate_limited)):
             return 2
-        return int(any(outcome.status != "success" for outcome in self.outcomes))
+        return int(any(outcome.status != "success" for outcome in self.outcomes)
+                   or bool(self.recommendations and self.recommendations.deferred))
 
     @property
     def summary(self) -> str:
@@ -87,5 +93,6 @@ class SearchRun:
         if self.recommendations:
             summary += "\n" + self.recommendations.summary
             if self.recommendations.rate_limited:
-                summary += " (HTTP 429; unchecked matches retained)"
+                action = "skipped" if self.recommendations.validate_terms else "retained"
+                summary += f" (HTTP 429; unchecked matches {action})"
         return summary

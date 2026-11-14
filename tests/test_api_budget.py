@@ -55,3 +55,11 @@ def test_recommendation_check_cost_is_explicitly_outside_page_estimate():
     assert estimate.calls_per_run_estimated == 1
     assert "Description calls are not included" in output
     assert "shared Browse call cap" in output
+
+
+def test_strict_validation_alone_includes_description_cost_notice():
+    estimate = estimate_api_budget(["EBAY_GB"], [SearchQuery("Galaxy Disk", "Galaxy Disk")],
+                                   validate_search_terms=True)
+    output = format_api_budget_estimate(estimate)
+    assert "Search-term validation is enabled" in output
+    assert "Description calls are not included" in output
