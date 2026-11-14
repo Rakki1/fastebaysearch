@@ -27,6 +27,7 @@ def render_email_html(results: list[SearchResult], person_name: str, run_summary
                 <td>{index}</td>
                 <td>{esc(result.name)}<br>{esc(result.change_description)}</td>
                 <td>{esc(result.ebay_site)}</td>
+                <td>{esc(result.location_country or 'Unknown')}</td>
                 <td>{esc(result.price)}</td>
                 <td>{esc(result.seller)}</td>
                 <td>{esc(result.starts)}</td>
@@ -65,6 +66,7 @@ def render_email_html(results: list[SearchResult], person_name: str, run_summary
                 <th>#</th>
                 <th>Name</th>
                 <th>Ebay Site</th>
+                <th>Location</th>
                 <th>Price</th>
                 <th>Seller</th>
                 <th>Starts</th>

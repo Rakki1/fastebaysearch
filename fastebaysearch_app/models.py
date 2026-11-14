@@ -31,6 +31,7 @@ class SearchResult:
     source_site: str = ""
     event_id: int = 0
     change_description: str = ""
+    location_country: str = ""
 
     @property
     def notification_key(self):
@@ -73,10 +74,12 @@ class SearchRun:
     items: list[SearchResult] = field(default_factory=list)
     outcomes: list[QueryOutcome] = field(default_factory=list)
     recommendations: RecommendationStats | None = None
+    quota_blocked: bool = False
+    quota_message: str = ""
 
     @property
     def exit_code(self) -> int:
-        if (any(outcome.status == "rate_limited" for outcome in self.outcomes)
+        if (self.quota_blocked or any(outcome.status == "rate_limited" for outcome in self.outcomes)
                 or (self.recommendations and self.recommendations.rate_limited)):
             return 2
         return int(any(outcome.status != "success" for outcome in self.outcomes)
@@ -95,4 +98,6 @@ class SearchRun:
             if self.recommendations.rate_limited:
                 action = "skipped" if self.recommendations.validate_terms else "retained"
                 summary += f" (HTTP 429; unchecked matches {action})"
+        if self.quota_message:
+            summary += "\n" + self.quota_message
         return summary

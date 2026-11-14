@@ -88,12 +88,13 @@ class AppConfig:
     log_max_size_mb: int = 10
     api_concurrency: int = 8
     exchange_rate_cache_ttl_hours: int = 24
-    ebay_daily_api_limit: int = 10000
+    ebay_daily_api_limit: int = 5000
     api_budget_safety_percent: int = 90
     estimated_results_per_query: int = 200
     ebay_search_in_description: bool = True
     ebay_filter_recommendations: bool = False
     ebay_validate_search_terms: bool = False
+    ebay_check_api_quota: bool = True
     ebay_max_search_calls_per_run: int = 500
     ebay_exclude_category_ids: dict[str, list[str]] = field(default_factory=dict)
     ebay_category_ids: dict[str, list[str]] = field(default_factory=dict)
@@ -274,6 +275,7 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
         ebay_search_in_description=as_bool(raw.get("ebay_search_in_description"), True),
         ebay_filter_recommendations=as_bool(raw.get("ebay_filter_recommendations"), False),
         ebay_validate_search_terms=as_bool(raw.get("ebay_validate_search_terms"), False),
+        ebay_check_api_quota=as_bool(raw.get("ebay_check_api_quota"), True),
         ebay_max_search_calls_per_run=parse_int(raw.get("ebay_max_search_calls_per_run"), "ebay_max_search_calls_per_run", 500, minimum=1),
         exclude_terms=normalize_terms(raw.get("exclude_terms")),
         search=search,
@@ -288,7 +290,7 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
             24,
             minimum=0,
         ),
-        ebay_daily_api_limit=parse_int(raw.get("ebay_daily_api_limit"), "ebay_daily_api_limit", 10000, minimum=1),
+        ebay_daily_api_limit=parse_int(raw.get("ebay_daily_api_limit"), "ebay_daily_api_limit", 5000, minimum=1),
         api_budget_safety_percent=parse_percent(raw.get("api_budget_safety_percent"), "api_budget_safety_percent", 90),
         estimated_results_per_query=parse_int(
             raw.get("estimated_results_per_query"),

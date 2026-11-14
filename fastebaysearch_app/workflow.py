@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .config import AppConfig
 from .database import Database
 from .ebay_client import EbayClient
+from .ebay_urls import EBAY_MARKETPLACE_DOMAINS, build_item_web_url
 from .models import SearchQuery, SearchResult, SearchRun
 from .notifications.email import EmailNotifier
 from .notifications.html_report import HtmlReportNotifier
 from .notifications.telegram import TelegramNotifier
+from .quota_tracking import QuotaMonitor, QuotaStore
 
 
 @dataclass(frozen=True)
@@ -27,11 +29,23 @@ class WorkflowResult:
 
 
 def dedupe_by_item_id(results: list[SearchResult]) -> list[SearchResult]:
+    def marketplace_quality(result: SearchResult) -> tuple[bool, bool]:
+        known = result.ebay_site in EBAY_MARKETPLACE_DOMAINS
+        return known, known and result.source_site == result.ebay_site
+
     deduped: dict[str, SearchResult] = {}
     for result in results:
         previous = deduped.get(result.item_id)
-        if previous is None or (result.source_site == result.ebay_site and previous.source_site != previous.ebay_site):
+        if previous is None:
             deduped[result.item_id] = result
+            continue
+        preferred, other = (result, previous) if marketplace_quality(result) > marketplace_quality(previous) else (previous, result)
+        country = preferred.location_country or other.location_country
+        if country:
+            preferred = replace(preferred, location_country=country,
+                                link=build_item_web_url(preferred.item_id, preferred.ebay_site, preferred.link,
+                                                        location_country=country))
+        deduped[result.item_id] = preferred
     return list(deduped.values())
 
 
@@ -57,6 +71,19 @@ class Workflow:
         self.telegram_notifier = telegram_notifier
 
     async def run(self) -> WorkflowResult:
+        fetch_quota = getattr(self.ebay_client, "get_browse_quota", None)
+        monitor = (QuotaMonitor(QuotaStore(self.database.connect, self.config.ebay_client_id), fetch_quota, self.logger)
+                   if self.config.ebay_check_api_quota and callable(fetch_quota) else None)
+        blocked = await monitor.before_search() if monitor else None
+        if blocked:
+            search_run = SearchRun(quota_blocked=True, quota_message=blocked.message)
+        else:
+            search_run = await self._search()
+            if monitor:
+                await monitor.after_search(search_run)
+        return await self._deliver(search_run, monitor)
+
+    async def _search(self) -> SearchRun:
         rates = self._get_exchange_rates_from_cache()
         if not rates:
             rates = await self.ebay_client.get_exchange_rates()
@@ -67,7 +94,9 @@ class Workflow:
                 if rates:
                     self.logger.warning("Using stale cached exchange rates because live refresh failed.")
 
-        search_run = await self.ebay_client.run_queries(self.config.ebay_sites, self.queries, rates)
+        return await self.ebay_client.run_queries(self.config.ebay_sites, self.queries, rates)
+
+    async def _deliver(self, search_run: SearchRun, monitor: QuotaMonitor | None) -> WorkflowResult:
         all_found_items = search_run.items
         unique_item_ids = dedupe_by_item_id(all_found_items)
         new_results = self.database.claim_new_results(unique_item_ids, enqueue_html=self.config.use_html_report)
@@ -92,7 +121,13 @@ class Workflow:
 
         if self.config.use_telegram and self.config.telegram:
             try:
-                if not await self._notify_telegram(notification_summary if search_run.exit_code else ""):
+                quota_warning = bool(monitor and monitor.active and search_run.exit_code == 2)
+                if quota_warning:
+                    telegram = self.telegram_notifier or TelegramNotifier(self.config.telegram, self.logger)
+                    if not await monitor.notify_once(telegram):
+                        result.notification_errors.append("Telegram quota notification failed")
+                summary = notification_summary if search_run.exit_code and not quota_warning else ""
+                if not await self._notify_telegram(summary):
                     result.notification_errors.append("Telegram notification failed")
             except Exception as exc:
                 self.logger.error("Telegram notification failed: %s", type(exc).__name__)

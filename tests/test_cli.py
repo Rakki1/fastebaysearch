@@ -12,6 +12,7 @@ def minimal_config():
     return {
         "use_email": False,
         "use_telegram": False,
+        "ebay_check_api_quota": False,
         "use_html_report": False,
         "html_report_dir": "reports",
         "html_report_max_per_run": 1,

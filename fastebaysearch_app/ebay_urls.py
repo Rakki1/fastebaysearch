@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from .utils import safe_url
 
 
@@ -26,8 +28,25 @@ EBAY_MARKETPLACE_DOMAINS = {
 }
 
 
-def build_item_web_url(item_id: str, listing_marketplace_id: str, fallback_url: object = "") -> str:
-    domain = EBAY_MARKETPLACE_DOMAINS.get(str(listing_marketplace_id).upper())
+EBAY_COUNTRY_DOMAINS = {
+    marketplace.removeprefix("EBAY_"): domain
+    for marketplace, domain in EBAY_MARKETPLACE_DOMAINS.items()
+    if marketplace != "EBAY_MOTORS_US"
+}
+
+
+def normalize_location_country(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    country = value.strip().upper()
+    return country if re.fullmatch(r"[A-Z]{2}", country) else ""
+
+
+def build_item_web_url(item_id: str, listing_marketplace_id: str, fallback_url: object = "",
+                       *, location_country: object = "") -> str:
+    country = normalize_location_country(location_country)
+    domain = (EBAY_COUNTRY_DOMAINS.get(country)
+              or EBAY_MARKETPLACE_DOMAINS.get(str(listing_marketplace_id).upper()))
     if item_id and domain:
         return f"https://{domain}/itm/{item_id}"
     return safe_url(str(fallback_url).split("?")[0])

@@ -44,10 +44,13 @@ def test_migration_from_061_preserves_history_and_does_not_enqueue_old_items(tmp
         """)
         before = {table: conn.execute(f"SELECT * FROM {table}").fetchall()
                   for table in ("ebayids", "history", "exchange_rates")}
+        original_columns = {table: ', '.join(row[1] for row in conn.execute(f"PRAGMA table_info({table})"))
+                            for table in before}
     db.ensure_schema()
     db.ensure_schema()
     with db.connect() as conn:
-        after = {table: conn.execute(f"SELECT * FROM {table}").fetchall() for table in before}
+        after = {table: conn.execute(f"SELECT {original_columns[table]} FROM {table}").fetchall() for table in before}
+        assert conn.execute("SELECT location_country FROM ebayids").fetchall() == [("",)]
     assert before == after
     assert queue_rows(db) == []
     assert db.claim_new_results([item(11111)], enqueue_html=True) == []

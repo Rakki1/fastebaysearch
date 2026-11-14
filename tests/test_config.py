@@ -10,6 +10,7 @@ def minimal_config():
     return {
         "use_email": False,
         "use_telegram": False,
+        "ebay_check_api_quota": False,
         "ebay_sites": ["EBAY_US"],
         "exclude_terms": [],
         "ebay_client_id": "client-id",
@@ -58,6 +59,16 @@ def test_load_config_enables_search_term_validation(tmp_path):
     path = tmp_path / "config.json"
     path.write_text(json.dumps(data), encoding="utf-8")
     assert load_config(path, tmp_path).ebay_validate_search_terms is True
+
+
+def test_quota_monitor_is_enabled_by_default_and_offline_budget_defaults_to_5000(tmp_path):
+    data = minimal_config()
+    data.pop("ebay_check_api_quota")
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    config = load_config(path, tmp_path)
+    assert config.ebay_check_api_quota is True
+    assert config.ebay_daily_api_limit == 5000
 
 
 def test_load_config_parses_log_max_size_mb(tmp_path):

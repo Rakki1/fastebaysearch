@@ -3,12 +3,13 @@ from __future__ import annotations
 import logging
 import sqlite3
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .models import SearchResult
-from . import change_tracking
+from .ebay_urls import build_item_web_url
+from . import change_tracking, quota_tracking
 from .utils import utc_now_str
 
 SQLITE_VARIABLE_LIMIT = 900
@@ -50,6 +51,7 @@ class Database:
                     title TEXT,
                     url TEXT,
                     site TEXT,
+                    location_country TEXT NOT NULL DEFAULT '',
                     price TEXT,
                     seller TEXT,
                     starts TEXT,
@@ -85,6 +87,7 @@ class Database:
             )
             self._ensure_ebayids_columns(cur)
             change_tracking.migrate(cur)
+            quota_tracking.migrate(cur)
             _execute_schema_statements(cur,
                 """
                 CREATE INDEX IF NOT EXISTS idx_item_id ON ebayids (item_id);
@@ -111,6 +114,8 @@ class Database:
             cur.execute("ALTER TABLE ebayids ADD COLUMN telegram_attempted_at TEXT;")
         if "telegram_attempt_count" not in columns:
             cur.execute("ALTER TABLE ebayids ADD COLUMN telegram_attempt_count INTEGER NOT NULL DEFAULT 0;")
+        if "location_country" not in columns:
+            cur.execute("ALTER TABLE ebayids ADD COLUMN location_country TEXT NOT NULL DEFAULT '';")
 
     def _seed_history(self, cur: sqlite3.Cursor) -> None:
         cur.execute("SELECT COUNT(*) FROM history;")
@@ -157,18 +162,28 @@ class Database:
             conn.execute("BEGIN IMMEDIATE;")
             cur = conn.cursor()
             existing_item_ids: set[str] = set()
+            existing_countries: dict[str, str] = {}
             for chunk in _chunks([result.item_id for result in unique_results], SQLITE_VARIABLE_LIMIT):
                 placeholders = ",".join("?" for _ in chunk)
-                rows = cur.execute(f"SELECT item_id FROM ebayids WHERE item_id IN ({placeholders});", chunk).fetchall()
+                rows = cur.execute(f"SELECT item_id, location_country FROM ebayids WHERE item_id IN ({placeholders});", chunk).fetchall()
                 existing_item_ids.update(str(row[0]) for row in rows)
+                existing_countries.update((str(row[0]), row[1]) for row in rows if row[1])
+
+            unique_results = [
+                replace(result, location_country=existing_countries[result.item_id],
+                        link=build_item_web_url(result.item_id, result.ebay_site, result.link,
+                                                location_country=existing_countries[result.item_id]))
+                if not result.location_country and result.item_id in existing_countries else result
+                for result in unique_results
+            ]
 
             inserted = [result for result in unique_results if result.item_id not in existing_item_ids]
             cur.executemany(
                 """
                 INSERT OR IGNORE INTO ebayids (
-                    item_id, keywords, title, url, site, price, seller, starts, ends, image, insert_time
+                    item_id, keywords, title, url, site, price, seller, starts, ends, image, insert_time, location_country
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -183,6 +198,7 @@ class Database:
                         result.ends,
                         result.image,
                         insert_time,
+                        result.location_country,
                     )
                     for result in inserted
                 ],
@@ -206,7 +222,7 @@ class Database:
             rows = conn.execute(
                 """
                 SELECT e.keywords, e.title, e.site, e.price, e.item_id, e.url,
-                       e.seller, e.starts, e.ends, e.image
+                       e.seller, e.starts, e.ends, e.image, e.location_country
                 FROM html_notifications h JOIN ebayids e ON e.item_id = h.item_id
                 WHERE h.delivered_at IS NULL
                 ORDER BY h.queued_at, e.id LIMIT ?;
@@ -266,7 +282,7 @@ class Database:
             conn.execute("BEGIN IMMEDIATE;")
             rows = conn.execute(
                 f"""
-                SELECT keywords, title, site, price, item_id, url, seller, starts, ends, image
+                SELECT keywords, title, site, price, item_id, url, seller, starts, ends, image, location_country
                 FROM ebayids
                 WHERE telegram_notified_at IS NULL
                   AND telegram_attempt_count < ?
@@ -325,7 +341,7 @@ class Database:
             limit_sql = " LIMIT ?"
             params = (max(1, int(limit)),)
         query = f"""
-            SELECT keywords, title, site, price, item_id, url, seller, starts, ends, image
+            SELECT keywords, title, site, price, item_id, url, seller, starts, ends, image, location_country
             FROM ebayids
             WHERE {notified_column} IS NULL
             ORDER BY id ASC
@@ -435,4 +451,5 @@ def _search_result_from_row(row) -> SearchResult:
         starts=row[7] or "",
         ends=row[8] or "",
         image=row[9] or "",
+        location_country=row[10] or "",
     )

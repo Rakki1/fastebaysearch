@@ -18,11 +18,13 @@ def build_caption(result: SearchResult) -> str:
     price = html.escape(result.price)
     keywords = html.escape(result.keywords)
     link = html.escape(safe_url(result.link), quote=True)
+    location = f"Location: {html.escape(result.location_country)}\n" if result.location_country else ""
     return (
         f"⭐ <b>{heading}</b>\n"
         f"📦 {name}\n"
         f"💰 {price}\n"
         f"🔍 <i>Search: {keywords}</i>\n"
+        f"{location}"
         f'🔗 <a href="{link}">Link to item</a>'
     )
 
@@ -38,6 +40,9 @@ class TelegramNotifier:
 
     async def send_status(self, summary: str) -> bool:
         return await self._send_text("<b>PARTIAL SEARCH</b>\n" + html.escape(summary[:1800]) + "\nSee log for details.")
+
+    async def send_quota_status(self, summary: str) -> bool:
+        return await self._send_text("<b>eBay API limit</b>\n" + html.escape(summary[:3500]))
 
     def _header_text(self, count, run_summary):
         run_summary = run_summary[:1800] + ("\nSee log for details." if len(run_summary) > 1800 else "")

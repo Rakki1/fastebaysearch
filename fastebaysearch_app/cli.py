@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import sqlite3
 import sys
 import time
 from pathlib import Path
 
 from .api_budget import estimate_api_budget, format_api_budget_estimate
+from .analytics import AnalyticsError
 from .config import ConfigError, load_config, load_category_lookup_config
 from .database import Database
 from .ebay_client import EbayAuth, EbayClient
@@ -28,6 +30,8 @@ def build_parser() -> argparse.ArgumentParser:
                       help="Search without database access; write a local HTML report")
     mode.add_argument("--find-categories", metavar="KEYWORDS",
                       help="Find category IDs and paths on configured eBay marketplaces")
+    mode.add_argument("--api-quota", action="store_true",
+                      help="Read Browse quota and reset time from Developer Analytics; no listings or notifications")
     return parser
 
 
@@ -65,6 +69,21 @@ def run_find_categories(config_path: Path, script_dir: Path, keywords: str) -> i
         exit_code = 1
     print_categories(results)
     return exit_code
+
+
+async def run_api_quota(config_path: Path, script_dir: Path) -> int:
+    try:
+        config = load_category_lookup_config(config_path, script_dir)
+        auth = EbayAuth(config.token_file, config.ebay_client_id, config.ebay_client_secret,
+                        logging.getLogger("fastebaysearch"))
+        token = await asyncio.to_thread(auth.get_access_token)
+        quota = await EbayClient(token, auth=auth).get_browse_quota()
+    except (ConfigError, OSError, RuntimeError, ValueError) as exc:
+        detail = str(exc) if isinstance(exc, (ConfigError, AnalyticsError)) else type(exc).__name__
+        print(f"API quota lookup failed: {detail}", file=sys.stderr)
+        return 1
+    print(quota.summary())
+    return 2 if quota.exhausted else 0
 
 
 def run_api_budget_estimate(config_path: Path, script_dir: Path) -> int:
@@ -195,6 +214,8 @@ def main(argv: list[str] | None = None) -> int:
     script_dir = Path(__file__).resolve().parent.parent
     if args.find_categories is not None:
         return run_find_categories(Path(args.config), script_dir, args.find_categories)
+    if args.api_quota:
+        return asyncio.run(run_api_quota(Path(args.config), script_dir))
     if args.estimate_api_budget:
         return run_api_budget_estimate(Path(args.config), script_dir)
     if args.clean_search:

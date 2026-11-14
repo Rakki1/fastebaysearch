@@ -183,6 +183,21 @@ def test_source_marketplace_preference():
     assert dedupe_by_item_id([domestic,foreign]) == [domestic]
 
 
+def test_known_listing_marketplace_replaces_missing_origin_even_in_foreign_search():
+    missing = item(ebay_site='Unknown', source_site='EBAY_GB',
+                   link='https://www.ebay.co.uk/itm/12345')
+    german = item(ebay_site='EBAY_DE', source_site='EBAY_US',
+                  link='https://www.ebay.de/itm/12345')
+    assert dedupe_by_item_id([missing, german]) == [german]
+    assert dedupe_by_item_id([german, missing]) == [german]
+
+
+def test_same_quality_marketplace_results_preserve_first_search_order():
+    first = item(ebay_site='EBAY_DE', source_site='EBAY_GB')
+    later = item(ebay_site='EBAY_DE', source_site='EBAY_US')
+    assert dedupe_by_item_id([first, later]) == [first]
+
+
 @pytest.mark.parametrize('total', [9999,10000,10001])
 def test_result_cap_partitions_instead_of_losing_old_items(total):
     root_filter = []

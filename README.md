@@ -171,7 +171,15 @@ Telegram's `telegram_send_mode` accepts `auto` or `photo` (image when available,
 
 ### Changed listings and status alerts
 
-Seen listings are refreshed on every observation. A separate durable event queue reports fixed purchase-price decreases and changes between AUCTION and FIXED_PRICE. Bid changes, title edits and currency-conversion changes do not trigger alerts. Price comparisons require the same currency and source marketplace. Responses from the listing's own marketplace take priority; otherwise the first configured marketplace wins.
+Seen listings are refreshed on every observation. A separate durable event queue reports fixed purchase-price decreases and changes between AUCTION and FIXED_PRICE. Bid changes, title edits and currency-conversion changes do not trigger alerts. Price comparisons require the same currency and source marketplace. When merging duplicate items, responses with a recognized listing marketplace replace results with missing origin information, even if found through another marketplace. Among results with recognized origins, responses from the listing's own marketplace take priority; otherwise the first configured marketplace wins. Available location-country information is merged separately, preserving this price/source preference.
+
+### Item location and links
+
+Item links use the physical location country (`itemLocation.country`), independently of the marketplace searched or where the listing was published. For example, a German item found in a UK search links to `ebay.de`, even if its listing marketplace is `EBAY_GB`. Email/HTML reports show the country code in a separate **Location** column; Telegram shows **Location** when known. **Ebay Site** still identifies the listing marketplace.
+
+The country is taken from search results or from a full-description response already fetched for validation; this feature makes no additional API calls. Duplicate results share available country information. On later observations, a missing country does not erase the stored country or revert its link. If the location is missing or has no supported eBay site (for example, Finland), links fall back to the listing marketplace and then to the API item URL. No country is inferred from currency or seller identity.
+
+The next normal run automatically adds a `location_country` column to existing databases, preserving history and delivery markers. Existing rows initially have no country until observed again; pending initial notifications use refreshed data. Location/link changes alone do not create new notification events. Old generated reports and stored change-event snapshots are not rewritten. No JSON configuration change is required.
 
 The first structured observation of an older listing establishes a baseline without a change alert. A channel whose initial listing notification is pending receives the latest details in that notification. New and changed listings share each channel's per-run limit, with the oldest pending entries selected first.
 
@@ -179,16 +187,17 @@ Every partial or failed search run sends one summary per enabled channel even wi
 
 ## Run modes
 
-Listing searches and budget estimates validate the configuration, including credentials for enabled channels. Disable email/Telegram for a preview when you have not configured their credentials. Category lookup needs only eBay credentials, `ebay_sites`, and the optional token-cache path.
+Listing searches and budget estimates validate the configuration, including credentials for enabled channels. Disable email/Telegram for a preview when you have not configured their credentials. Category and quota lookups need only eBay credentials, `ebay_sites`, and the optional token-cache path.
 
 | Mode | API calls | SQLite | Output |
 | --- | --- | --- | --- |
-| Normal run (no flag) | eBay searches, OAuth as needed, exchange rates on cache miss | Reads/writes history, seen items and delivery state | Enabled HTML, email and Telegram channels, including pending deliveries |
+| Normal run (no flag) | Developer Analytics quota check, eBay searches when allowed, OAuth as needed, exchange rates on cache miss | Reads/writes history, seen items, quota cooldown and delivery state | Enabled HTML, email and Telegram channels, including pending deliveries |
 | `--clean-search` | eBay searches, OAuth as needed, live exchange rates | No access | Local HTML preview only; no email/Telegram or delivery queue |
 | `--estimate-api-budget` | None | No access | Console estimate only; no token cache, log file or notifications |
 | `--find-categories "keywords"` | Taxonomy lookups, OAuth as needed | No access | Category names, paths and a configuration example on the console; no listings, reports or notifications |
+| `--api-quota` | Developer Analytics, OAuth as needed | No access | Browse quota, usage, remaining calls and reset time on the console; no listings or notifications |
 
-The three command-line modes cannot be combined.
+The four command-line modes cannot be combined.
 
 ## Search settings
 
@@ -201,6 +210,7 @@ Settings are top-level JSON fields unless shown with a dotted path. See [ebaysea
 | `ebay_search_in_description` | `true`: search titles and descriptions. Set `false` for title search. The example uses `false`; defaults to `true` when omitted. |
 | `ebay_filter_recommendations` | Default `false`. With description search enabled, check full descriptions for matches contributed only by recognized recommendation blocks. |
 | `ebay_validate_search_terms` | Default `false`. Require every positive search condition locally before accepting a result; skip unverifiable results and report the run as partial. |
+| `ebay_check_api_quota` | Default `true`. Check the actual Browse quota, pause normal searches until reset when exhausted, and send one Telegram warning per quota episode. |
 | `ebay_search_keywords.base_terms` | Each expression generates a query on every configured marketplace. |
 | `ebay_search_keywords.required_terms` | At least one alternative must match. Use `[]` to omit the restriction. |
 | `exclude_terms` | Exclusions appended to every query. |
@@ -340,13 +350,13 @@ Temporary API failures receive up to two retries; authentication errors allow on
 
 ## API budget and scheduling
 
-The program defaults to **10,000 Browse calls per day for its calculation**. Check your own application's Browse quota and current usage in your eBay developer account and set `ebay_daily_api_limit` accordingly before scheduling. Changing this field does not change eBay's quota or enforce a local daily request counter.
+The offline budget calculation defaults to **5,000 Browse calls per day**. Check your application's actual quota using `--api-quota` and set `ebay_daily_api_limit` accordingly before scheduling. Changing this estimate field does not change eBay's quota or override the runtime Analytics check. A larger value explicitly configured in an existing JSON file is preserved.
 
 These optional fields control the estimate:
 
 ```json
 {
-  "ebay_daily_api_limit": 10000,
+  "ebay_daily_api_limit": 5000,
   "api_budget_safety_percent": 90,
   "estimated_results_per_query": 200
 }
@@ -357,6 +367,24 @@ Run `--estimate-api-budget` using the commands in [First HTML search](#first-htm
 When recommendation filtering or search-term validation is enabled, description calls and their retries share the same per-run Browse cap as search calls. They are not included in the page-based estimate or scheduling interval: measure a clean search before scheduling. If no call budget remains for verification, validation defers unchecked matches; recommendation filtering alone retains them as uncertain.
 
 The output shows estimated calls per run, possible runs per day and a recommended interval. It also shows a retry allowance at the estimated page count and the configured per-run Browse call cap. OAuth calls are separate (0–2 per run). The recommended interval uses the normal estimate; allow headroom for retries, other applications using the same quota and higher result counts. Automatic time-range splitting can increase usage beyond the estimate. The 500-call cap is per run, not a daily quota controller.
+
+### Live quota checks and Telegram warnings
+
+Read the actual application quota without searching for items:
+
+```bash
+.venv/bin/python fastebaysearch.py ebaysearch.json --api-quota
+```
+
+On Windows, use `.\.venv\Scripts\python.exe` in place of `.venv/bin/python`. The command returns `0` when quota is available, `2` when exhausted, and `1` when lookup fails. It does not use SQLite or send notifications. It may refresh the OAuth token cache. Reset times are shown in UTC and, if different, the machine's local time with its UTC offset.
+
+Normal runs query the [Developer Analytics API](https://www.developer.ebay.com/develop/api/buy/developer_analytics_api) before Browse searches and again after a Browse HTTP 429. The `buy.browse` resource covers this program's search and single-item description calls. The separate `buy.browse.item.bulk` quota belongs to `getItems` and is not combined with it. Analytics checks have a separate API quota and do not consume `ebay_max_search_calls_per_run`.
+
+When no Browse quota remains, the database stores the pause and the API's reset time. Scheduled runs skip Browse calls and Analytics polling until that time, then check again and resume if allowed. A Telegram warning includes the available limit/usage/reset information and explains that the next scheduled run after reset retries the search. Successful warning delivery is remembered across restarts and subsequent runs using the same database/application. A failed Telegram send remains eligible for retry; concurrent runs claim the warning before sending it. A new quota window or a new outage after a successful recovery permits a new warning. Telegram must be enabled and configured; no extra JSON setting is required for the default behavior.
+
+If Analytics fails, ordinary searches can still proceed. A Browse 429 without a trustworthy reset time starts a 15-minute cooldown and sends a single warning explaining that the reset is unknown. The next eligible scheduled run checks again. A positive Analytics result alone does not clear an existing unknown-reset warning episode: Browse must actually work again. Repeated generic Telegram `PARTIAL SEARCH` status messages for the same quota episode are suppressed; already queued listing notifications can still be delivered. Other notification channels retain their existing partial-run reporting behavior.
+
+The normal run returns `2` while quota-paused, and logs keep recording the pause. These checks observe a shared application quota, not reserve capacity against other processes using the same credentials. Clean-search previews remain database-free and do not use the persistent cooldown or send Telegram warnings. Set `ebay_check_api_quota` to `false` to disable automatic checks and restore ordinary 429 handling; `--api-quota` remains available.
 
 ### Scheduled runs with cron
 
@@ -376,7 +404,7 @@ Exit codes:
 
 - `0`: all searches completed and attempted notifications/reports succeeded. Items safely queued beyond the normal HTML limit do not make the run fail.
 - `1`: configuration, database, token, notification or other runtime error; also an incomplete search or truncated clean-search report.
-- `2`: eBay rate limiting was encountered; takes precedence over notification/report failures. Results received before the search cancellation are still processed.
+- `2`: eBay rate limiting was encountered or Developer Analytics reported an exhausted quota; takes precedence over notification/report failures. Results received before the search cancellation are still processed.
 
 A failed or partial search is not equivalent to a successful search with zero results. Check the per-query status, fetched counts and notification errors in the log.
 

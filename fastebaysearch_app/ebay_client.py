@@ -13,7 +13,7 @@ from urllib.parse import urlparse, parse_qs, quote
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from .ebay_urls import build_item_web_url
+from .ebay_urls import build_item_web_url, normalize_location_country
 from .models import QueryOutcome, RecommendationStats, SearchQuery, SearchResult, SearchRun
 from .recommendation_filter import Decision, check_description, matches, missing_groups
 from .utils import clean_ebay_id, format_date, safe_url, scalar_text, write_private_json_atomic
@@ -88,6 +88,8 @@ def parse_search_results(base_name: str, raw_items: list[Any], rates: dict[str, 
             seller = {}
 
         listing_marketplace_id = scalar_text(item.get("listingMarketplaceId"), "Unknown")
+        location = item.get("itemLocation")
+        location_country = normalize_location_country(location.get("country")) if isinstance(location, dict) else ""
         results.append(
             SearchResult(
                 keywords=str(base_name),
@@ -95,7 +97,9 @@ def parse_search_results(base_name: str, raw_items: list[Any], rates: dict[str, 
                 ebay_site=listing_marketplace_id,
                 price=display_price,
                 item_id=item_id,
-                link=build_item_web_url(item_id, listing_marketplace_id, item.get("itemWebUrl")),
+                link=build_item_web_url(item_id, listing_marketplace_id, item.get("itemWebUrl"),
+                                        location_country=location_country),
+                location_country=location_country,
                 seller=scalar_text(seller.get("username"), "Unknown"),
                 starts=format_date(item.get("itemCreationDate"), logger),
                 ends=format_date(item.get("itemEndDate"), logger),
@@ -179,6 +183,7 @@ class EbayClient:
         self.filter_recommendations = filter_recommendations
         self.validate_search_terms = validate_search_terms
         self.description_calls = 0
+        self._description_locations: dict[tuple[str, str], str] = {}
         self.max_search_calls = max_search_calls
         self._page_semaphore = asyncio.Semaphore(max(1, int(concurrency_limit)))
         self.search_calls = 0
@@ -192,6 +197,10 @@ class EbayClient:
         self._refresh_attempted = False
         self._token_generation = 0
         self._rate_limited = asyncio.Event()
+
+    async def get_browse_quota(self):
+        from .analytics import get_browse_quota
+        return await get_browse_quota(self)
 
     async def get_exchange_rates(self) -> dict[str, float]:
         import aiohttp
@@ -283,6 +292,10 @@ class EbayClient:
             data = await self._request_page(session, site, {}, url=ITEM_URL + quote(rest_id, safe=""))
         if data.get("itemId") != rest_id:
             raise SearchRequestError("getItem returned a different or missing itemId")
+        location = data.get("itemLocation")
+        country = normalize_location_country(location.get("country")) if isinstance(location, dict) else ""
+        if country:
+            self._description_locations[(site, rest_id)] = country
         description = data.get("description")
         if not isinstance(description, str) or not description.strip():
             raise SearchRequestError("getItem returned no full description")
@@ -321,6 +334,12 @@ class EbayClient:
                         if key not in cache:
                             cache[key] = asyncio.create_task(fetch(*key))
                         description, error = await cache[key]
+                        location = item.get("itemLocation")
+                        country = normalize_location_country(location.get("country")) if isinstance(location, dict) else ""
+                        detail_country = self._description_locations.get(key)
+                        if not country and detail_country:
+                            item["itemLocation"] = {**(location if isinstance(location, dict) else {}),
+                                                    "country": detail_country}
                         if description is None:
                             decision = Decision("uncertain", error)
                         else:
@@ -452,6 +471,7 @@ class EbayClient:
 
         self.search_calls = 0
         self.description_calls = 0
+        self._description_locations = {}
         self.run_end = int(datetime.now(timezone.utc).timestamp() * 1000)
         self._rate_limited = asyncio.Event()
         self._refresh_lock = asyncio.Lock()

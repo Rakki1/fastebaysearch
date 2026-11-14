@@ -31,8 +31,8 @@ def observe(cur, results, new_ids, html_enabled):
                 changes.append(f"Price decreased: {old['fixed_amount']} -> {item.fixed_amount} {item.fixed_currency}")
         snapshot = json.dumps(asdict(item))
         cur.execute("INSERT INTO item_observations VALUES (?,?) ON CONFLICT(item_id) DO UPDATE SET snapshot=excluded.snapshot", (item.item_id, snapshot))
-        cur.execute("UPDATE ebayids SET keywords=?, title=?, url=?, site=?, price=?, seller=?, starts=?, ends=?, image=? WHERE item_id=?",
-                    (item.keywords,item.name,item.link,item.ebay_site,item.price,item.seller,item.starts,item.ends,item.image,item.item_id))
+        cur.execute("UPDATE ebayids SET keywords=?, title=?, url=?, site=?, price=?, seller=?, starts=?, ends=?, image=?, location_country=? WHERE item_id=?",
+                    (item.keywords,item.name,item.link,item.ebay_site,item.price,item.seller,item.starts,item.ends,item.image,item.location_country,item.item_id))
         if changes and item.item_id not in new_ids:
             event = replace(item, change_description='; '.join(changes))
             cur.execute("INSERT INTO change_events(item_id,created_at,old_snapshot,snapshot) VALUES (?,?,?,?)", (item.item_id,datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f"),row[0],json.dumps(asdict(event))))

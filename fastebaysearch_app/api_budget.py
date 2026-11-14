@@ -32,7 +32,7 @@ class ApiBudgetEstimate:
 def estimate_api_budget(
     ebay_sites: list[str],
     queries: list[SearchQuery],
-    daily_api_limit: int = 10000,
+    daily_api_limit: int = 5000,
     safety_percent: int = 90,
     estimated_results_per_query: int = 200,
     search_limit: int = DEFAULT_SEARCH_LIMIT,
@@ -101,6 +101,7 @@ def format_api_budget_estimate(estimate: ApiBudgetEstimate) -> str:
             f"Recommended cron interval: {interval}",
             "Automatic time partitions add calls beyond the normal estimate. The per-run cap does not enforce a daily quota.",
             "The interval uses the normal estimate, not the retry allowance or the maximum result count.",
+            "This is an offline estimate. Normal-run Developer Analytics checks use a separate API quota.",
         ]
     )
     if estimate.filter_recommendations or estimate.validate_search_terms:

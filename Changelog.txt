@@ -1,5 +1,13 @@
 Unreleased
 
+- Read the real Browse quota and reset time from Developer Analytics before normal searches and after HTTP 429; add --api-quota for a read-only lookup.
+- Persist quota cooldowns and one acknowledged Telegram warning per episode/window; resume scheduled searches after reset, with retryable warning delivery and an unknown-reset fallback.
+- Default offline budget estimates to 5,000 calls per day; preserve explicit configured limits and keep Analytics calls separate from Browse accounting.
+
+- Build item links from the physical item-location country, with listing-marketplace and API-URL fallbacks; show location separately in email, HTML and Telegram.
+- Merge available country information across searches and retain stored country when later responses omit it, without additional API calls or location-only alerts. Add the database column automatically while preserving delivery history.
+- Prefer known listing-marketplace metadata over missing origin data when selecting cross-marketplace price observations.
+
 - Add opt-in ebay_validate_search_terms: require every positive AND word and one alternative from each OR group, even without recommendation blocks.
 - Keep quoted phrases within one field, defer unverifiable results without saving them as seen, and report missing terms and partial verification runs.
 - Preserve existing behavior when validation is disabled; no database migration or rechecking of old notification queues.
