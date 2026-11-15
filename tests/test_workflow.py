@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from fastebaysearch_app.config import AppConfig, EmailConfig, SearchConfig, TelegramConfig
-from fastebaysearch_app.models import SearchQuery, SearchResult, SearchRun
+from fastebaysearch_app.models import QueryOutcome, SearchQuery, SearchResult, SearchRun
 from fastebaysearch_app.workflow import Workflow
 
 
@@ -86,19 +86,19 @@ class FakeDatabase:
 
 
 class FakeTelegramNotifier:
-    async def send_header(self, count, run_summary=""):
+    async def send_status(self, summary):
         return True
 
     async def send(self, results):
         return results[:1]
 
 
-class FakeTelegramHeaderFailureNotifier:
-    async def send_header(self, count, run_summary=""):
+class FakeTelegramStatusFailureNotifier:
+    async def send_status(self, summary):
         return False
 
     async def send(self, results):
-        raise AssertionError("send must not be called when header fails")
+        raise AssertionError("send must not be called when status warning fails")
 
 
 class FakeEmailNotifier:
@@ -262,15 +262,19 @@ def test_workflow_html_report_failure_does_not_block_other_channels():
     assert database.email_succeeded is True
 
 
-def test_workflow_marks_claimed_telegram_rows_failed_when_header_fails():
+def test_workflow_releases_claimed_telegram_rows_when_status_warning_fails():
+    class FailedSearchClient(FakeEbayClient):
+        async def run_queries(self, *args):
+            return SearchRun(outcomes=[QueryOutcome("EBAY_US", SearchQuery("camera", "camera"), status="failed")])
+
     database = FakeDatabase()
-    ebay_client = FakeEbayClient()
+    ebay_client = FailedSearchClient()
     workflow = Workflow(
         make_config(use_email=False),
         database,
         ebay_client,
         [SearchQuery("camera", "camera")],
-        telegram_notifier=FakeTelegramHeaderFailureNotifier(),
+        telegram_notifier=FakeTelegramStatusFailureNotifier(),
     )
 
     asyncio.run(workflow.run())
@@ -280,7 +284,7 @@ def test_workflow_marks_claimed_telegram_rows_failed_when_header_fails():
     assert database.telegram_success_ids == []
     assert database.telegram_failed_ids == []
     assert database.telegram_released_ids == ["1", "2"]
-    assert database.telegram_release_error == "Telegram header notification failed"
+    assert database.telegram_release_error == "Telegram status notification failed"
 
 
 def test_telegram_exception_does_not_block_email_and_marks_failure(caplog):
@@ -302,7 +306,6 @@ def test_telegram_exception_does_not_block_email_and_marks_failure(caplog):
     ("success", 0), ("failed", 1), ("truncated", 1), ("rate_limited", 2), ("cancelled", 1),
 ])
 def test_search_summary_reaches_notifications_only_as_needed(status, exit_code):
-    from fastebaysearch_app.models import QueryOutcome
     summaries = []
 
     class Client(FakeEbayClient):
@@ -312,8 +315,8 @@ def test_search_summary_reaches_notifications_only_as_needed(status, exit_code):
             return run
 
     class Telegram(FakeTelegramNotifier):
-        async def send_header(self, count, run_summary=""):
-            summaries.append(run_summary)
+        async def send_status(self, summary):
+            summaries.append(summary)
             return True
 
         async def send(self, results):
@@ -328,7 +331,7 @@ def test_search_summary_reaches_notifications_only_as_needed(status, exit_code):
                                  telegram_notifier=Telegram(), email_notifier=Email()).run())
     assert result.exit_code == exit_code
     if status == "success":
-        assert summaries == ["", "Search complete"]
+        assert summaries == ["Search complete"]
     else:
         assert summaries == [result.search_run.summary, result.search_run.summary]
         assert "PARTIAL SEARCH" in summaries[0]

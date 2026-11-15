@@ -1,5 +1,7 @@
 Unreleased
 
+- Remove the separate Telegram search-report header and pending-item count; send listing notifications directly while retaining partial-search and quota warnings.
+
 - Show the local notification date and time after New listing! in Telegram, with English month names and ordinal days.
 - Fill empty search-log reasons with the search status, showing reason=success on successful searches while preserving diagnostic error messages.
 

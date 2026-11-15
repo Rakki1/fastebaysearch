@@ -167,9 +167,9 @@ HTML behaves differently: only items first discovered while HTML is enabled ente
 
 Email requires non-empty SMTP login/password and identity fields even when authentication is disabled. Keep unconfigured channels disabled.
 
-Telegram's `telegram_send_mode` accepts `auto` or `photo` (image when available, text fallback), `text`, or `photo_only` (skips items without images; no fallback). `telegram_disable_web_preview` controls text-link previews. Headers and fallback requests are additional to the item limit. Failed item deliveries become eligible again after six hours, up to three claimed attempts; exhausted items remain stored but are not automatically retried.
+Telegram's `telegram_send_mode` accepts `auto` or `photo` (image when available, text fallback), `text`, or `photo_only` (skips items without images; no fallback). `telegram_disable_web_preview` controls text-link previews. Status warnings and fallback requests are additional to the item limit. Failed item deliveries become eligible again after six hours, up to three claimed attempts; exhausted items remain stored but are not automatically retried.
 
-New-listing Telegram notifications include their sending date and time in the server's local time after `New listing!`, for example `New listing! 15th November 2026, 14:45`. Month names are always English, with ordinal days such as `1st`, `2nd`, `3rd`, `11th`, `21st` and `31st`.
+New-listing Telegram notifications include their sending date and time in the server's local time after `New listing!`, for example `New listing! 15th November 2026, 14:45`. Month names are always English, with ordinal days such as `1st`, `2nd`, `3rd`, `11th`, `21st` and `31st`. Listing notifications are sent directly, without a separate search-report header or item-count message.
 
 ### Changed listings and status alerts
 
@@ -185,7 +185,7 @@ The next normal run automatically adds a `location_country` column to existing d
 
 The first structured observation of an older listing establishes a baseline without a change alert. A channel whose initial listing notification is pending receives the latest details in that notification. New and changed listings share each channel's per-run limit, with the oldest pending entries selected first.
 
-Every partial or failed search run sends one summary per enabled channel even with no pending listings. HTML writes a status-only report when necessary. Successful empty runs remain silent. Successful Telegram reports omit the search-status line. Telegram truncates long diagnostic details with a pointer to the log. Channel failures do not block other channels.
+Every partial or failed search run sends one summary per enabled channel even with no pending listings. HTML writes a status-only report when necessary. Successful empty runs remain silent. Telegram sends partial-search summaries as separate status messages and truncates long diagnostic details with a pointer to the log. Channel failures do not block other channels.
 
 ## Run modes
 

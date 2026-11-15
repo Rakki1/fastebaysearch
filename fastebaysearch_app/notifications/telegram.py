@@ -47,22 +47,11 @@ class TelegramNotifier:
         self.logger = logger or logging.getLogger("fastebaysearch")
         self.sleep_seconds = sleep_seconds
 
-    async def send_header(self, count: int, run_summary: str = "") -> bool:
-        return await self._send_text(self._header_text(count, run_summary))
-
     async def send_status(self, summary: str) -> bool:
         return await self._send_text("<b>PARTIAL SEARCH</b>\n" + html.escape(summary[:1800]) + "\nSee log for details.")
 
     async def send_quota_status(self, summary: str) -> bool:
         return await self._send_text("<b>eBay API limit</b>\n" + html.escape(summary[:3500]))
-
-    def _header_text(self, count, run_summary):
-        run_summary = run_summary[:1800] + ("\nSee log for details." if len(run_summary) > 1800 else "")
-        text = f"<b>SEARCH REPORT ({datetime.now().strftime('%d.%m. at %H:%M')})</b>\n"
-        if run_summary:
-            text += f"{html.escape(run_summary)}\n"
-        text += f"<b>{count}</b> items awaiting notification"
-        return text
 
     async def _send_text(self, text):
         import aiohttp
@@ -72,13 +61,13 @@ class TelegramNotifier:
                 async with session.post(url, json={"chat_id": self.config.chat_id, "text": text, "parse_mode": "HTML"}) as response:
                     data = await response.json(content_type=None)
                     if response.status != 200 or not isinstance(data, dict) or not data.get("ok", False):
-                        self.logger.error("Telegram header error: HTTP %s", response.status)
+                        self.logger.error("Telegram status error: HTTP %s", response.status)
                         return False
                     return True
             except asyncio.TimeoutError:
-                self.logger.error("Telegram header timeout.")
+                self.logger.error("Telegram status timeout.")
             except (aiohttp.ClientError, OSError, ValueError) as exc:
-                self.logger.error("Telegram header network error: %s", type(exc).__name__)
+                self.logger.error("Telegram status network error: %s", type(exc).__name__)
         return False
 
     async def send(self, results: list[SearchResult]) -> list[SearchResult]:

@@ -58,11 +58,11 @@ def test_telegram_failure_is_false_and_logs_no_token(response, caplog):
 
 
 @pytest.mark.parametrize("response", [OSError(SECRET_URL), Response([]), Response(ValueError(SECRET_URL))])
-def test_header_failure_is_safe(response, monkeypatch, caplog):
+def test_status_failure_is_safe(response, monkeypatch, caplog):
     session = Session([response])
     monkeypatch.setattr(aiohttp, "ClientSession", lambda **kwargs: session)
     notifier = TelegramNotifier(TelegramConfig("TEST-SECRET", "chat"))
-    assert asyncio.run(notifier.send_header(1, "PARTIAL SEARCH")) is False
+    assert asyncio.run(notifier.send_status("PARTIAL SEARCH")) is False
     assert "TEST-SECRET" not in caplog.text
 
 
@@ -87,20 +87,21 @@ def test_photo_only_does_not_fall_back():
     assert len(session.calls) == 1
 
 
-def test_partial_run_in_header(monkeypatch):
+def test_partial_run_status(monkeypatch):
     session = Session([Response({"ok": True})])
     monkeypatch.setattr(aiohttp, "ClientSession", lambda **kwargs: session)
     notifier = TelegramNotifier(TelegramConfig("token", "chat"))
-    assert asyncio.run(notifier.send_header(3, "PARTIAL SEARCH: failed=1")) is True
+    assert asyncio.run(notifier.send_status("PARTIAL SEARCH: failed=1")) is True
     assert "PARTIAL SEARCH: failed=1" in session.calls[0][1]["json"]["text"]
 
 
-def test_header_without_summary_has_no_empty_line(monkeypatch):
+def test_listing_is_sent_without_report_header(monkeypatch):
     session = Session([Response({"ok": True})])
     monkeypatch.setattr(aiohttp, "ClientSession", lambda **kwargs: session)
-    notifier = TelegramNotifier(TelegramConfig("token", "chat"))
-    assert asyncio.run(notifier.send_header(3)) is True
-    lines = session.calls[0][1]["json"]["text"].split("\n")
-    assert len(lines) == 2
-    assert lines[0].startswith("<b>SEARCH REPORT (")
-    assert lines[1] == "<b>3</b> items awaiting notification"
+    notifier = TelegramNotifier(TelegramConfig("token", "chat"), sleep_seconds=0)
+    assert asyncio.run(notifier.send([ITEM])) == [ITEM]
+    assert len(session.calls) == 1
+    caption = session.calls[0][1]["json"]["caption"]
+    assert "New listing! " in caption.splitlines()[0]
+    assert "SEARCH REPORT" not in caption
+    assert "items awaiting notification" not in caption

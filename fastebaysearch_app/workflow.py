@@ -160,14 +160,15 @@ class Workflow:
         telegram = self.telegram_notifier or TelegramNotifier(self.config.telegram, self.logger)
         if not pending:
             return await telegram.send_status(summary) if summary else True
-        try:
-            header_ok = await telegram.send_header(len(pending), run_summary=summary)
-        except Exception:
-            self.database.release_telegram_claims(pending, "Telegram header notification failed")
-            raise
-        if not header_ok:
-            self.database.release_telegram_claims(pending, "Telegram header notification failed")
-            return False
+        if summary:
+            try:
+                status_ok = await telegram.send_status(summary)
+            except Exception:
+                self.database.release_telegram_claims(pending, "Telegram status notification failed")
+                raise
+            if not status_ok:
+                self.database.release_telegram_claims(pending, "Telegram status notification failed")
+                return False
         try:
             sent = await telegram.send(pending)
         except Exception:

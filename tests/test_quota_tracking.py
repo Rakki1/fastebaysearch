@@ -31,7 +31,7 @@ def db(tmp_path):
 class Telegram:
     def __init__(self, sent=True):
         self.messages = []
-        self.headers = []
+        self.sent_items = []
         self.sent = sent
 
     async def send_quota_status(self, message):
@@ -42,11 +42,8 @@ class Telegram:
     async def send_status(self, summary):
         pytest.fail("A quota episode must not also send repeated generic Telegram status messages")
 
-    async def send_header(self, count, run_summary=""):
-        self.headers.append((count, run_summary))
-        return True
-
     async def send(self, pending):
+        self.sent_items.extend(pending)
         return pending
 
 
@@ -264,7 +261,7 @@ def test_browse_429_refreshes_quota_and_partial_results_still_get_delivered(tmp_
     assert outcome.exit_code == 2
     assert client.quota_calls == 2
     assert len(telegram.messages) == 1
-    assert telegram.headers == [(1, "")]
+    assert telegram.sent_items == outcome.new_results
     assert db.pending_telegram_notifications() == []
 
 
