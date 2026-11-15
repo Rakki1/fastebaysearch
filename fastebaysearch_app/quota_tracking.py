@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from .analytics import AnalyticsError, BrowseQuota, format_reset
 from .run_budget import SAMPLE_LIMIT, SAMPLE_MAX_AGE
 
+QUOTA_RECHECK_SECONDS = 3600
+
 
 def migrate(cur):
     cur.execute("""CREATE TABLE IF NOT EXISTS api_quota_state (
@@ -51,12 +53,15 @@ class QuotaStore:
 
     def block(self, quota: BrowseQuota | None, now: float, budget_summary: str = ""):
         reset = quota.reset_at(now) if quota and quota.exhausted else None
+        # Analytics counters can lag behind the reported daily reset.
+        next_check = min(reset, now + QUOTA_RECHECK_SECONDS) if reset else now + 900
         details = quota.summary() if quota else "Browse API returned HTTP 429; quota details unavailable."
         if quota and not quota.exhausted:
             details = "Browse API returned HTTP 429. Analytics has not confirmed an exhausted quota. " + details
         message = "eBay Browse API limit reached.\n" + details
         if reset:
-            message += "\nSearches resume at the next scheduled run after " + format_reset(reset) + "."
+            message += ("\nThe limit will be checked again at the next scheduled run after "
+                        + format_reset(next_check) + ". Searches resume when quota is available.")
         else:
             message += "\nA reliable reset time is unavailable. The limit will be checked again on a later scheduled run."
         if budget_summary:
@@ -66,10 +71,10 @@ class QuotaStore:
             old = self._read(conn)
             new_window = bool(old and old.reset_at is not None and old.reset_at <= now and reset and reset != old.reset_at)
             if not old or new_window:
-                state = QuotaBlock(uuid.uuid4().hex, reset, reset or now + 900, message)
+                state = QuotaBlock(uuid.uuid4().hex, reset, next_check, message)
             else:
                 # Learning a previously unknown reset time must not send a second warning.
-                state = QuotaBlock(old.episode_id, reset, reset or now + 900, message,
+                state = QuotaBlock(old.episode_id, reset, next_check, message,
                                    old.telegram_notified_at, old.claim_until)
             conn.execute("INSERT OR REPLACE INTO api_quota_state VALUES (?,?,?,?,?,?,?)",
                          (self.key, state.episode_id, state.reset_at, state.next_check_at, state.message,
@@ -141,7 +146,9 @@ class QuotaMonitor:
     async def before_search(self):
         self.active = self.store.get()
         now = self.clock()
-        if self.active and now < self.active.next_check_at:
+        # Older releases persisted pauses lasting all the way until reset;
+        # recheck those immediately without clearing delivery/episode history.
+        if self.active and now < self.active.next_check_at <= now + QUOTA_RECHECK_SECONDS:
             self.logger.warning("Browse searches paused: %s", self.active.message)
             return self.active
         quota = await self._fetch()

@@ -1,5 +1,8 @@
 Unreleased
 
+- Recheck exhausted Browse quotas hourly or at the reported reset, whichever comes first, so delayed Analytics counters cannot pause searches for a full day after quota recovers.
+- Recheck older day-long stored pauses on the next run while preserving acknowledged Telegram warnings and notification history; show the next quota-check time in new warnings.
+
 - Cache confidently checked full descriptions and per-query decisions in SQLite across normal runs, including rejected listings; default expiry is 24 hours and 0 disables caching.
 - Refresh changed listing summaries immediately, keep prices and buying options fresh, retry uncertain checks, and keep --clean-search independent of the cache and database.
 - Include warm-cache search costs and periodic description refreshes in Telegram scheduling budgets; migrate cache and budget tables automatically without changing seen-item or notification history.

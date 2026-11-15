@@ -127,6 +127,7 @@ def test_unknown_reset_does_not_create_new_episode_on_repeated_429(db):
     store = QuotaStore(db.connect, "app")
     old = store.block(quota(remaining=100), NOW)  # Analytics may lag a short-term 429.
     assert old.reset_at is None
+    assert old.next_check_at == NOW + 900
     assert "reliable reset time is unavailable" in old.message
     assert store.block(quota(remaining=100), NOW + 1800).episode_id == old.episode_id
 
@@ -177,7 +178,7 @@ def test_workflow_pauses_browse_and_resumes_after_reset_with_one_warning(tmp_pat
     set_clock(monkeypatch, now)
     cfg = config(tmp_path)
     telegram = Telegram()
-    client = Client([quota(), quota(remaining=4999)], [completed()])
+    client = Client([quota(reset=NOW + 1200), quota(remaining=4999)], [completed()])
 
     def run():
         return asyncio.run(workflow.Workflow(cfg, db, client, [], telegram_notifier=telegram).run())
@@ -188,11 +189,70 @@ def test_workflow_pauses_browse_and_resumes_after_reset_with_one_warning(tmp_pat
     assert client.exchange_calls == 0
     assert client.quota_calls == 1
     assert len(telegram.messages) == 1
-    now[0] = NOW + 3601
+    now[0] = NOW + 1201
     assert run().exit_code == 0
     assert client.search_calls == 1
     assert client.quota_calls == 2
     assert QuotaStore(db.connect, cfg.ebay_client_id).get() is None
+
+
+def test_paused_workflow_periodically_rechecks_quota_and_recovers_before_reported_reset(tmp_path, db, monkeypatch):
+    now = [NOW]
+    set_clock(monkeypatch, now)
+    cfg = config(tmp_path)
+    telegram = Telegram()
+    exhausted = quota(reset=NOW + 86400)
+    client = Client([exhausted, exhausted, quota(remaining=5000, reset=NOW + 86400)], [completed()])
+
+    def run():
+        return asyncio.run(workflow.Workflow(cfg, db, client, [], telegram_notifier=telegram).run())
+
+    for elapsed, checks in ((0, 1), (1800, 1), (3600, 2), (5400, 2)):
+        now[0] = NOW + elapsed
+        assert run().exit_code == 2
+        assert client.quota_calls == checks
+        assert client.search_calls == 0
+        assert client.exchange_calls == 0
+    assert len(telegram.messages) == 1
+    assert "checked again" in telegram.messages[0]
+    now[0] = NOW + 7200
+    assert run().exit_code == 0
+    assert client.quota_calls == 3
+    assert client.search_calls == 1
+    assert len(telegram.messages) == 1
+    assert QuotaStore(db.connect, cfg.ebay_client_id).get() is None
+
+
+@pytest.mark.parametrize("remaining", [0, 5000])
+def test_legacy_day_long_pause_is_rechecked_on_first_run_without_duplicate_warning(tmp_path, db, monkeypatch, remaining):
+    set_clock(monkeypatch, [NOW])
+    cfg = config(tmp_path)
+    store = QuotaStore(db.connect, cfg.ebay_client_id)
+    reset = NOW + 86400
+    state = store.block(quota(reset=reset), NOW - 3600)
+    store.finish_alert(state.episode_id, True, NOW - 3600)
+    with db.connect() as conn:
+        # State written by an older release waited all the way until reset.
+        conn.execute("UPDATE api_quota_state SET next_check_at=? WHERE app_key=?", (reset, store.key))
+    telegram = Telegram()
+    client = Client([quota(remaining=remaining, reset=reset)], [completed()])
+
+    outcome = asyncio.run(workflow.Workflow(cfg, db, client, [], telegram_notifier=telegram).run())
+
+    assert client.quota_calls == 1
+    assert telegram.messages == []
+    if remaining:
+        assert outcome.exit_code == 0
+        assert client.search_calls == 1
+        assert store.get() is None
+    else:
+        assert outcome.exit_code == 2
+        assert client.search_calls == 0
+        refreshed = store.get()
+        assert refreshed.episode_id == state.episode_id
+        assert refreshed.telegram_notified_at == NOW - 3600
+        assert refreshed.next_check_at == NOW + 3600
+        assert refreshed.reset_at == reset
 
 
 def test_browse_429_refreshes_quota_and_partial_results_still_get_delivered(tmp_path, db, monkeypatch):
