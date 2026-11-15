@@ -1,5 +1,8 @@
 Unreleased
 
+- Show the local notification date and time after New listing! in Telegram, with English month names and ordinal days.
+- Fill empty search-log reasons with the search status, showing reason=success on successful searches while preserving diagnostic error messages.
+
 - Recheck exhausted Browse quotas hourly or at the reported reset, whichever comes first, so delayed Analytics counters cannot pause searches for a full day after quota recovers.
 - Recheck older day-long stored pauses on the next run while preserving acknowledged Telegram warnings and notification history; show the next quota-check time in new warnings.
 

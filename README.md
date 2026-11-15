@@ -169,6 +169,8 @@ Email requires non-empty SMTP login/password and identity fields even when authe
 
 Telegram's `telegram_send_mode` accepts `auto` or `photo` (image when available, text fallback), `text`, or `photo_only` (skips items without images; no fallback). `telegram_disable_web_preview` controls text-link previews. Headers and fallback requests are additional to the item limit. Failed item deliveries become eligible again after six hours, up to three claimed attempts; exhausted items remain stored but are not automatically retried.
 
+New-listing Telegram notifications include their sending date and time in the server's local time after `New listing!`, for example `New listing! 15th November 2026, 14:45`. Month names are always English, with ordinal days such as `1st`, `2nd`, `3rd`, `11th`, `21st` and `31st`.
+
 ### Changed listings and status alerts
 
 Seen listings are refreshed on every observation. A separate durable event queue reports fixed purchase-price decreases and changes between AUCTION and FIXED_PRICE. Bid changes, title edits and currency-conversion changes do not trigger alerts. Price comparisons require the same currency and source marketplace. When merging duplicate items, responses with a recognized listing marketplace replace results with missing origin information, even if found through another marketplace. Among results with recognized origins, responses from the listing's own marketplace take priority; otherwise the first configured marketplace wins. Available location-country information is merged separately, preserving this price/source preference.

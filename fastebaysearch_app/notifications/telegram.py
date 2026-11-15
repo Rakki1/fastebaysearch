@@ -9,9 +9,21 @@ from ..config import TelegramConfig
 from ..models import SearchResult
 from ..utils import safe_url
 
+_ENGLISH_MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
+def _format_notification_time(timestamp: datetime) -> str:
+    day = timestamp.day
+    suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    month = _ENGLISH_MONTHS[timestamp.month - 1]
+    return f"{day}{suffix} {month} {timestamp.year}, {timestamp:%H:%M}"
+
 
 def build_caption(result: SearchResult) -> str:
-    heading = "Updated listing" if result.event_id else "New listing!"
+    heading = "Updated listing" if result.event_id else f"New listing! {_format_notification_time(datetime.now())}"
     name = html.escape(result.name)
     if result.event_id:
         name = "Updated listing: " + html.escape(result.change_description) + "\n" + name

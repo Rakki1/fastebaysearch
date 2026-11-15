@@ -572,5 +572,5 @@ class EbayClient:
             log = self.logger.info if outcome.status == "success" else self.logger.warning
             log("Search %s: %s category=%s query=%r pages=%s reported=%s fetched=%s reason=%s",
                 outcome.status, outcome.site, outcome.category_id or "all", outcome.query.keywords, outcome.pages,
-                outcome.total, len(outcome.raw_items), outcome.error)
+                outcome.total, len(outcome.raw_items), outcome.error or outcome.status)
         return run
