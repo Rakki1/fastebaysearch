@@ -12,7 +12,7 @@ from fastebaysearch_app.ebay_client import EbayClient, SEARCH_URL
 from fastebaysearch_app.models import QueryOutcome, SearchQuery
 from fastebaysearch_app.workflow import dedupe_by_item_id
 from test_config import minimal_config
-from test_search_reliability import Response, Session
+from http_fakes import Response, Session
 
 
 @pytest.mark.parametrize('value', [None, [], '139973', {'GB': ['139973']},

@@ -13,7 +13,7 @@ from fastebaysearch_app.query_builder import build_queries
 from fastebaysearch_app.recommendation_filter import check_description, positive_groups
 from test_cli import minimal_config, write_config
 from test_recommendation_filter import HTML, REST_ID, TITLE, detail_response, item, search_response
-from test_search_reliability import Response, Session
+from http_fakes import Response, Session
 
 
 def query(base="Battle Through Time", required=("commodore", "c64", "c-64")):

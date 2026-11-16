@@ -6,42 +6,7 @@ import pytest
 
 from fastebaysearch_app.ebay_client import EbayAuth, EbayClient, RateLimitError, parse_search_results
 from fastebaysearch_app.models import SearchQuery
-
-
-class Response:
-    def __init__(self, status=200, data=None):
-        self.status = status
-        self.data = {"total": 0} if data is None else data
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        return False
-
-    async def json(self):
-        if isinstance(self.data, Exception):
-            raise self.data
-        return self.data
-
-
-class Session:
-    def __init__(self, responses):
-        self.responses = responses if callable(responses) else iter(responses)
-        self.calls = []
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        return False
-
-    def get(self, url, **kwargs):
-        self.calls.append(kwargs)
-        response = self.responses(kwargs) if callable(self.responses) else next(self.responses)
-        if isinstance(response, Exception):
-            raise response
-        return response
+from http_fakes import Response, Session
 
 
 def search(session, client=None):

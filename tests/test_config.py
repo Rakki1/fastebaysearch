@@ -65,20 +65,13 @@ def test_description_cache_rejects_invalid_ttl(tmp_path, ttl):
         load_config(path, tmp_path)
 
 
-def test_load_config_enables_recommendation_filter(tmp_path):
+@pytest.mark.parametrize("setting", ["ebay_filter_recommendations", "ebay_validate_search_terms"])
+def test_load_config_enables_search_check(tmp_path, setting):
     data = minimal_config()
-    data["ebay_filter_recommendations"] = True
+    data[setting] = True
     path = tmp_path / "config.json"
     path.write_text(json.dumps(data), encoding="utf-8")
-    assert load_config(path, tmp_path).ebay_filter_recommendations is True
-
-
-def test_load_config_enables_search_term_validation(tmp_path):
-    data = minimal_config()
-    data["ebay_validate_search_terms"] = True
-    path = tmp_path / "config.json"
-    path.write_text(json.dumps(data), encoding="utf-8")
-    assert load_config(path, tmp_path).ebay_validate_search_terms is True
+    assert getattr(load_config(path, tmp_path), setting) is True
 
 
 def test_quota_monitor_is_enabled_by_default_and_offline_budget_defaults_to_5000(tmp_path):

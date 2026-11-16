@@ -92,9 +92,6 @@ class QuotaStore:
                          "(SELECT id FROM api_run_costs WHERE app_key=? AND profile=? ORDER BY id DESC LIMIT ?)",
                          (self.key, profile, self.key, profile, SAMPLE_LIMIT))
 
-    def run_costs(self, profile, now):
-        return [sample["calls"] for sample in self.run_cost_samples(profile, now)]
-
     def run_cost_samples(self, profile, now):
         with self.connect() as conn:
             # Read-only reports must also work before the first budget migration.

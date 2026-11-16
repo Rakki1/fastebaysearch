@@ -1,5 +1,8 @@
 Unreleased
 
+- Keep scheduling estimates conservative when recent measurements mix complete cache-cost data with legacy or uncached samples.
+- Organize pagination and listing-change regressions by feature, share HTTP test doubles, remove a duplicate Telegram status test and an unused budget-store wrapper.
+
 - Extend --api-quota with measured full-run and warm-cache costs, description-refresh reserves and a scheduling recommendation based on the live quota, reusing the Telegram budget calculation.
 - Read existing run-cost history without creating or migrating SQLite databases or requiring notification credentials; report missing measurements explicitly while preserving quota-only lookup and exit codes.
 

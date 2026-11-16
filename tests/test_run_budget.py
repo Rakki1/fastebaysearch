@@ -81,7 +81,7 @@ def test_old_measurements_and_other_applications_are_not_used(tmp_path):
     budget.record(SearchRun(browse_calls=541), NOW)
     assert "has not been measured" in budget.summary(quota(), NOW + SAMPLE_MAX_AGE + 1)
     different_app = QuotaStore(budget.store.connect, "other-app")
-    assert different_app.run_costs(budget.profile, NOW) == []
+    assert different_app.run_cost_samples(budget.profile, NOW) == []
 
 
 def test_changed_search_configuration_does_not_reuse_previous_measurement(tmp_path):
@@ -155,7 +155,7 @@ def test_completed_search_measurement_appears_in_next_single_telegram_limit_warn
 def test_real_client_counts_search_and_description_attempts_together(monkeypatch):
     import aiohttp
     from fastebaysearch_app.ebay_client import EbayClient
-    from test_search_reliability import Response, Session
+    from http_fakes import Response, Session
     from test_recommendation_filter import query, item, HTML, REST_ID
     session = Session([Response(data={"total": 1, "itemSummaries": [item()]}),
                        Response(data={"itemId": REST_ID, "description": HTML + "<p>Anirog C64</p>"})])
@@ -170,7 +170,7 @@ def test_real_client_counts_search_and_description_attempts_together(monkeypatch
 def test_legacy_recommendation_cap_is_not_a_complete_budget_measurement(monkeypatch, tmp_path):
     import aiohttp
     from fastebaysearch_app.ebay_client import EbayClient
-    from test_search_reliability import Response, Session
+    from http_fakes import Response, Session
     from test_recommendation_filter import query, item
     session = Session([Response(data={"total": 1, "itemSummaries": [item()]})])
     monkeypatch.setattr(aiohttp, "ClientSession", lambda: session)
@@ -219,6 +219,17 @@ def test_uncacheable_descriptions_are_budgeted_every_run(tmp_path):
     assert "Warm-cache base: 98 calls/run" in summary
     assert "443 description calls per 24h" in summary
     assert "Recommended: 40 complete runs/24h" in summary
+
+
+def test_mixed_legacy_and_cached_measurements_do_not_underestimate_cost(tmp_path):
+    budget = measured_budget(tmp_path)
+    budget.record(SearchRun(browse_calls=700), NOW)
+    budget.record(cached_run(description_calls=0), NOW + 1)
+    summary = budget.summary(quota(), NOW + 2)
+    assert "700 Browse calls" in summary
+    assert "Recommended: 6 complete runs/24h" in summary
+    assert "240 minutes" in summary
+    assert "Warm-cache base" not in summary
 
 
 def test_description_retries_are_included_in_refresh_reserve(tmp_path):

@@ -8,7 +8,7 @@ from fastebaysearch_app.config import ConfigError, load_config
 from fastebaysearch_app.ebay_client import EbayClient, SEARCH_URL
 from fastebaysearch_app.models import SearchQuery
 from test_config import minimal_config
-from test_search_reliability import Response, Session
+from http_fakes import Response, Session
 
 
 @pytest.mark.parametrize('value,expected', [({}, {}), ({'EBAY_GB':[]},{'EBAY_GB':[]}),

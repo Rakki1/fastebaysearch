@@ -11,7 +11,7 @@ from fastebaysearch_app.ebay_client import EbayClient, ITEM_URL, SEARCH_URL
 from fastebaysearch_app.models import SearchQuery
 from fastebaysearch_app.recommendation_filter import check_description, matches, positive_groups
 from fastebaysearch_app.workflow import dedupe_by_item_id
-from test_search_reliability import Response, Session
+from http_fakes import Response, Session
 
 
 HTML = (Path(__file__).parent / "fixtures/glider_recommendations.html").read_text(encoding="utf-8")

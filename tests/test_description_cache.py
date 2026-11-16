@@ -12,7 +12,7 @@ from fastebaysearch_app.description_cache import (DescriptionCache, DescriptionE
 from fastebaysearch_app.ebay_client import EbayClient
 from fastebaysearch_app.models import SearchQuery
 from fastebaysearch_app.recommendation_filter import Decision, positive_groups
-from test_search_reliability import Response, Session
+from http_fakes import Response, Session
 
 NOW = 1800000000.0
 REST = "v1|1234567890|0"

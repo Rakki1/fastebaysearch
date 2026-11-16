@@ -86,13 +86,18 @@ class RuntimeBudget:
         calls = max(costs)
         text = (heading + f"\nMeasured full-run cost: {calls} Browse calls "
                 f"(maximum of {len(costs)} recent complete runs, up to {SAMPLE_LIMIT} within 7 days).")
-        cached = [sample for sample in samples if sample["cache_ttl_hours"] and sample["base_calls"]]
+        # Apply cache savings only when every sample describes its refresh cost.
+        # Legacy or uncached measurements must not disappear from the estimate.
+        cached = samples if all(sample["cache_ttl_hours"] and sample["base_calls"]
+                                and sample["refresh_calls"] is not None for sample in samples) else []
         base = max(sample["base_calls"] for sample in cached) if cached else calls
         refresh = max(sample["refresh_calls"] for sample in cached) if cached else 0
         ttl = min(sample["cache_ttl_hours"] for sample in cached) if cached else 0
         if cached:
             text += (f"\nWarm-cache base: {base} calls/run; reserve about {refresh} description calls "
                      f"per {ttl}h refresh cycle. Initial filling can cost {base + refresh} calls.")
+        elif any(sample["cache_ttl_hours"] for sample in samples):
+            text += "\nCache cost data is incomplete; scheduling uses the maximum full-run cost without cache savings."
         if quota is None:
             text += "\nActual quota unavailable; scheduling frequency cannot be calculated."
         else:

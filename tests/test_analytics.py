@@ -7,7 +7,7 @@ import pytest
 
 from fastebaysearch_app.analytics import AnalyticsError, get_browse_quota, parse_browse_quota
 from fastebaysearch_app.ebay_client import EbayClient
-from test_search_reliability import Response, Session
+from http_fakes import Response, Session
 
 
 RESET = "2026-11-15T08:00:00.000Z"

@@ -138,7 +138,7 @@ def test_notifications_show_location_separately_from_listing_marketplace():
 
 def test_missing_search_location_reuses_description_metadata_without_extra_calls(monkeypatch):
     import aiohttp
-    from test_search_reliability import Response, Session
+    from http_fakes import Response, Session
     raw = {"itemId": "v1|1234567890|0", "title": "C64 game", "listingMarketplaceId": "EBAY_GB"}
     session = Session([
         Response(data={"total": 1, "itemSummaries": [raw]}),

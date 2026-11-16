@@ -5,7 +5,9 @@ import pytest
 
 from fastebaysearch_app.config import AppConfig, EmailConfig, SearchConfig, TelegramConfig
 from fastebaysearch_app.models import QueryOutcome, SearchQuery, SearchResult, SearchRun
-from fastebaysearch_app.workflow import Workflow
+from fastebaysearch_app.workflow import Workflow, dedupe_by_item_id
+from fastebaysearch_app.database import Database
+from listing_fixtures import item
 
 
 class FakeEbayClient:
@@ -343,3 +345,62 @@ def test_html_failure_returns_error_with_other_channels_disabled():
                                  html_report_notifier=FailingHtmlReportNotifier()).run())
     assert result.exit_code == 1
     assert result.notification_errors
+
+
+@pytest.mark.parametrize('status', ['success','failed','truncated','rate_limited','cancelled'])
+def test_empty_run_status_messages(tmp_path,status):
+    db = Database(tmp_path / "items.db")
+    db.ensure_schema()
+    calls = []
+    class Client(FakeEbayClient):
+        async def run_queries(self,*args):
+            return SearchRun(outcomes=[QueryOutcome('EBAY_GB',SearchQuery('camera','camera'),status=status)])
+    class Telegram:
+        async def send_status(self,summary):
+            calls.append(('telegram',summary))
+            return True
+    class Email:
+        def send_status(self,summary):
+            calls.append(('email',summary))
+            return True
+    result = asyncio.run(Workflow(make_config(),db,Client(),[],telegram_notifier=Telegram(),email_notifier=Email()).run())
+    assert len(calls) == (0 if status == 'success' else 2)
+    assert result.notification_errors == []
+
+
+def test_source_marketplace_preference():
+    foreign = item(source_site='EBAY_US')
+    domestic = item()
+    assert dedupe_by_item_id([foreign,domestic]) == [domestic]
+    assert dedupe_by_item_id([domestic,foreign]) == [domestic]
+
+
+def test_known_listing_marketplace_replaces_missing_origin_even_in_foreign_search():
+    missing = item(ebay_site='Unknown', source_site='EBAY_GB',
+                   link='https://www.ebay.co.uk/itm/12345')
+    german = item(ebay_site='EBAY_DE', source_site='EBAY_US',
+                  link='https://www.ebay.de/itm/12345')
+    assert dedupe_by_item_id([missing, german]) == [german]
+    assert dedupe_by_item_id([german, missing]) == [german]
+
+
+def test_same_quality_marketplace_results_preserve_first_search_order():
+    first = item(ebay_site='EBAY_DE', source_site='EBAY_GB')
+    later = item(ebay_site='EBAY_DE', source_site='EBAY_US')
+    assert dedupe_by_item_id([first, later]) == [first]
+
+
+def test_email_status_uses_smtp_and_returns_boolean(monkeypatch):
+    from fastebaysearch_app.notifications.email import EmailNotifier
+    sent = []
+    class SMTP:
+        def __init__(self,*args,**kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self,*args): pass
+        def starttls(self,**kwargs): pass
+        def login(self,*args): pass
+        def send_message(self,message): sent.append(message)
+    monkeypatch.setattr('smtplib.SMTP',SMTP)
+    assert EmailNotifier(make_config().email).send_status('PARTIAL SEARCH: failed=1') is True
+    assert len(sent) == 1
+    assert 'PARTIAL SEARCH' in sent[0]['Subject']
