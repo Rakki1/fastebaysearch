@@ -5,9 +5,10 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 
-def setup_logging(log_file: Path, log_to_console: bool, log_max_size_mb: int) -> logging.Logger:
+def setup_logging(log_file: Path, log_to_console: bool, log_max_size_mb: int,
+                  log_level: str = "INFO") -> logging.Logger:
     logger = logging.getLogger("fastebaysearch")
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(log_level)
     logger.propagate = False
 
     for handler in list(logger.handlers):

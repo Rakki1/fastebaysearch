@@ -427,6 +427,10 @@ Choose an interval that fits your API budget and leaves enough time for a run to
 
 The script writes `fastebaysearch.log` in the project directory. It rotates at `log_max_size_mb` and retains up to five backups. With `log_to_console: true`, runtime messages also appear in the terminal. Configuration errors are printed before the log is opened.
 
+The default `log_level: "INFO"` keeps the log concise and readable. Each run records quota information, one result summary per marketplace (including categories, pages and fetched items), description-cache usage, validation totals, Browse call consumption, and a final line with raw/checked/unique/new item counts, exit code and duration. Fetched and checked counts can include the same listing from different searches; the unique count removes those duplicates. Failed or incomplete searches retain their full query, marketplace, category and reason. Retries, deferred/uncertain checks and notification failures remain visible.
+
+For detailed investigation, set `"log_level": "DEBUG"` in the JSON configuration before the next run. This also logs generated queries, each successful search, and each rejected item's ID, search term and rejection reason. Set it back to `"INFO"` for routine monitoring. The setting applies to both the file and optional console output; it requires no new command-line flag. Existing configurations without this setting use `INFO` automatically. Previously written log files are not shortened.
+
 Exit codes:
 
 - `0`: all searches completed and attempted notifications/reports succeeded. Items safely queued beyond the normal HTML limit do not make the run fail.

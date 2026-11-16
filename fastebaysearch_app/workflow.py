@@ -214,14 +214,9 @@ def log_summary(logger: logging.Logger, result: WorkflowResult, start_time: floa
         logger.error(error)
     raw_count = (sum(len(outcome.raw_items) for outcome in result.search_run.outcomes)
                  if result.search_run.outcomes else len(result.all_found_items))
-    logger.info(f"Total raw results: {raw_count}")
-    if result.search_run.recommendations:
-        label = "search term" if result.search_run.recommendations.validate_terms else "recommendation"
-        logger.info("Results after %s checks: %s", label, len(result.all_found_items))
-    logger.info(f"Unique item IDs: {len(result.unique_item_ids)}")
-    logger.info(f"New items found: {len(result.new_results)}")
     logger.info(
-        f"Finished with exit_code={result.exit_code}. Items searched: {len(result.all_found_items)} | "
+        f"Finished with exit_code={result.exit_code}. Raw results: {raw_count} | "
+        f"Items after checks: {len(result.all_found_items)} | "
         f"Unique item IDs: {len(result.unique_item_ids)} | "
         f"New items: {len(result.new_results)} | "
         f"Duration: {time.time() - start_time:.2f}s"

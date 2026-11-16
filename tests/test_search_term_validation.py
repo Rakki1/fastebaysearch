@@ -166,7 +166,7 @@ def test_shared_item_can_pass_one_query_and_fail_another(monkeypatch):
 
 
 def test_rejection_log_names_missing_words(monkeypatch, caplog):
-    with caplog.at_level(logging.INFO, logger="fastebaysearch"):
+    with caplog.at_level(logging.DEBUG, logger="fastebaysearch"):
         result, _, _ = run(monkeypatch, [search_response([item("Battle C64")]),
                                         detail_response("<p>An original game.</p>")])
     assert result.recommendations.rejected == 1
@@ -308,7 +308,7 @@ def test_clean_search_reports_deferred_checks_without_database_access(tmp_path, 
 
     monkeypatch.setattr(cli, "_make_client", make_client)
     monkeypatch.setattr(cli, "HtmlReportNotifier", Notifier)
-    monkeypatch.setattr(cli, "setup_logging", lambda *args: logging.getLogger("test-validation"))
+    monkeypatch.setattr(cli, "setup_logging", lambda *args, **kwargs: logging.getLogger("test-validation"))
     monkeypatch.setattr(cli, "Database", lambda *a, **kw: pytest.fail("Clean search must not access database"))
     assert asyncio.run(cli.run_clean_search(config_path, tmp_path)) == 1
     assert [i.item_id for i in report.sent] == ([] if no_results else ["101"])

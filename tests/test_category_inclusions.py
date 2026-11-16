@@ -60,7 +60,7 @@ def test_multiple_categories_and_marketplaces_merge_for_delivery(monkeypatch, ca
             'price': {'value': '10', 'currency': 'EUR'}}]})
     session = Session(respond)
     monkeypatch.setattr(aiohttp, 'ClientSession', lambda: session)
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.DEBUG, logger="fastebaysearch")
     client = EbayClient('fake', category_ids={'EBAY_GB': ['139973', '4193'], 'EBAY_US': ['139973']})
     run = asyncio.run(client.run_queries(['EBAY_GB', 'EBAY_US'], [SearchQuery('Bongo', 'Bongo')], {}))
     assert run.exit_code == 0

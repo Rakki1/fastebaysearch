@@ -1,5 +1,8 @@
 Unreleased
 
+- Default logs to concise INFO output with marketplace summaries; retain complete search errors, validation/cache totals, quota/call usage and final result counts, with per-query and rejected-item details available through log_level=DEBUG.
+- Combine repeated result totals into the final run line and avoid repeating the full cached quota-pause report before the final summary.
+
 - Name fastebaysearch.log in Telegram partial-search messages so diagnostic details are easier to locate.
 
 - Keep scheduling estimates conservative when recent measurements mix complete cache-cost data with legacy or uncached samples.

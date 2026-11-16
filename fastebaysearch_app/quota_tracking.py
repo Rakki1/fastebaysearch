@@ -152,7 +152,8 @@ class QuotaMonitor:
         # Older releases persisted pauses lasting all the way until reset;
         # recheck those immediately without clearing delivery/episode history.
         if self.active and now < self.active.next_check_at <= now + QUOTA_RECHECK_SECONDS:
-            self.logger.warning("Browse searches paused: %s", self.active.message)
+            self.logger.warning("Browse searches paused; next quota check after %s",
+                                format_reset(self.active.next_check_at))
             return self.active
         quota = await self._fetch()
         if quota and quota.exhausted:

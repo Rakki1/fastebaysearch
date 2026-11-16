@@ -128,7 +128,7 @@ def run_api_budget_estimate(config_path: Path, script_dir: Path) -> int:
 def _log_queries(logger, queries) -> None:
     logger.info("Generated %s validated queries.", len(queries))
     for idx, query in enumerate(queries, start=1):
-        logger.info("  %s. (%s/100 chars) Base: %s -> %s",
+        logger.debug("  %s. (%s/100 chars) Base: %s -> %s",
                     idx, len(query.keywords), query.base_name, query.keywords)
 
 
@@ -153,7 +153,8 @@ async def run_app(config_path: Path, script_dir: Path) -> int:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 1
 
-    logger = setup_logging(script_dir / "fastebaysearch.log", config.log_to_console, config.log_max_size_mb)
+    logger = setup_logging(script_dir / "fastebaysearch.log", config.log_to_console, config.log_max_size_mb,
+                           log_level=config.log_level)
     _log_queries(logger, queries)
     database = Database(config.db_path, logger)
     history_id = None
@@ -191,7 +192,8 @@ async def run_clean_search(config_path: Path, script_dir: Path) -> int:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 1
 
-    logger = setup_logging(script_dir / "fastebaysearch.log", config.log_to_console, config.log_max_size_mb)
+    logger = setup_logging(script_dir / "fastebaysearch.log", config.log_to_console, config.log_max_size_mb,
+                           log_level=config.log_level)
     _log_queries(logger, queries)
     start_time = time.time()
     exit_code = 1

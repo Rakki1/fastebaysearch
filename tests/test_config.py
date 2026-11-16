@@ -41,6 +41,7 @@ def test_load_config_validates_and_resolves_paths(tmp_path):
     assert config.html_report_max_per_run == 1000
     assert config.exchange_rate_cache_ttl_hours == 24
     assert config.log_max_size_mb == 10
+    assert config.log_level == "INFO"
     assert config.ebay_filter_recommendations is False
     assert config.ebay_validate_search_terms is False
     assert config.ebay_description_cache_ttl_hours == 24
@@ -93,6 +94,19 @@ def test_load_config_parses_log_max_size_mb(tmp_path):
     config = load_config(config_path, tmp_path)
 
     assert config.log_max_size_mb == 2
+
+
+@pytest.mark.parametrize("level,expected", [("debug", "DEBUG"), ("WARNING", None)])
+def test_log_level_keeps_normal_diagnostics_available(tmp_path, level, expected):
+    data = minimal_config()
+    data["log_level"] = level
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    if expected is None:
+        with pytest.raises(ConfigError, match="log_level must be INFO or DEBUG"):
+            load_config(path, tmp_path)
+    else:
+        assert load_config(path, tmp_path).log_level == expected
 
 
 def test_load_config_rejects_invalid_log_max_size_mb(tmp_path):

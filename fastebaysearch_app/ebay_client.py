@@ -396,7 +396,7 @@ class EbayClient:
                 decision = replace(decision, status="deferred")
             setattr(stats, decision.status, getattr(stats, decision.status) + 1)
             if decision.status != "accepted":
-                log = self.logger.info if decision.status == "rejected" else self.logger.warning
+                log = self.logger.debug if decision.status == "rejected" else self.logger.warning
                 log("%s %s: site=%s item=%s base=%r reason=%s missing=%s",
                     label, decision.status, outcome.site, clean_ebay_id(item.get("itemId")),
                     outcome.query.base_name, decision.reason, decision.missing_groups)
@@ -422,7 +422,7 @@ class EbayClient:
         stats.description_cache_misses = len(cache_misses)
         stats.description_cache_uncached_entries = len(needed_keys - reusable_keys) if persistent else 0
         stats.rate_limited = self._rate_limited.is_set()
-        self.logger.info(stats.summary)
+        self.logger.debug(stats.summary)  # Included in the final run summary at INFO level.
         if persistent:
             self.logger.info("Description cache: hits=%s misses=%s entries=%s validation_hits=%s ttl_hours=%s",
                              stats.description_cache_hits, stats.description_cache_misses,
@@ -533,8 +533,8 @@ class EbayClient:
                     for site in sites for query in queries
                     for category in (self.category_ids.get(site) or [None])]
         for site in sites:
-            self.logger.info("Included categories for %s: %s", site, self.category_ids.get(site, []))
-            self.logger.info("Excluded categories for %s: %s", site, self.exclude_category_ids.get(site, []))
+            self.logger.debug("Included categories for %s: %s", site, self.category_ids.get(site, []))
+            self.logger.debug("Excluded categories for %s: %s", site, self.exclude_category_ids.get(site, []))
 
         async def guarded_search(session, outcome):
             if not self._rate_limited.is_set():
@@ -547,7 +547,8 @@ class EbayClient:
 
         async with aiohttp.ClientSession() as session:
             tasks = [asyncio.create_task(guarded_search(session, outcome)) for outcome in outcomes]
-            self.logger.info("Launching %s searches with concurrency=%s", len(tasks), self.concurrency_limit)
+            self.logger.info("Launching %s searches with concurrency=%s, Browse call cap=%s",
+                             len(tasks), self.concurrency_limit, self.max_search_calls)
             try:
                 await asyncio.gather(*tasks)
             except RateLimitError:
@@ -569,8 +570,17 @@ class EbayClient:
         for outcome, items in zip(outcomes, selected):
             run.items.extend(replace(item, source_site=outcome.site) for item in
                              parse_search_results(outcome.query.base_name, items, rates, self.logger))
-            log = self.logger.info if outcome.status == "success" else self.logger.warning
+            log = self.logger.debug if outcome.status == "success" else self.logger.warning
             log("Search %s: %s category=%s query=%r pages=%s reported=%s fetched=%s reason=%s",
                 outcome.status, outcome.site, outcome.category_id or "all", outcome.query.keywords, outcome.pages,
                 outcome.total, len(outcome.raw_items), outcome.error or outcome.status)
+        for site in sites:
+            site_outcomes = [outcome for outcome in outcomes if outcome.site == site]
+            self.logger.info("Search results: %s successful=%s incomplete=%s pages=%s fetched=%s "
+                             "categories=%s excluded_categories=%s",
+                             site, sum(outcome.status == "success" for outcome in site_outcomes),
+                             sum(outcome.status != "success" for outcome in site_outcomes),
+                             sum(outcome.pages for outcome in site_outcomes),
+                             sum(len(outcome.raw_items) for outcome in site_outcomes),
+                             self.category_ids.get(site, []) or "all", self.exclude_category_ids.get(site, []))
         return run

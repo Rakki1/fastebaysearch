@@ -102,7 +102,7 @@ def setup_clean_search_fakes(monkeypatch, report_notifier=FakeHtmlReportNotifier
     monkeypatch.setattr(
         cli,
         "setup_logging",
-        lambda path, log_to_console, log_max_size_mb: logging.getLogger("test-clean-search"),
+        lambda path, log_to_console, log_max_size_mb, **kwargs: logging.getLogger("test-clean-search"),
     )
 
 

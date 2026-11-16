@@ -86,6 +86,7 @@ class AppConfig:
     telegram: TelegramConfig | None
     log_to_console: bool
     log_max_size_mb: int = 10
+    log_level: str = "INFO"
     api_concurrency: int = 8
     exchange_rate_cache_ttl_hours: int = 24
     ebay_daily_api_limit: int = 5000
@@ -254,6 +255,9 @@ def load_config(config_path: Path, script_dir: Path, *, validate_notifications: 
         )
 
     use_html_report = as_bool(raw.get("use_html_report"), False)
+    log_level = str(raw.get("log_level") or "INFO").strip().upper()
+    if log_level not in {"INFO", "DEBUG"}:
+        raise ConfigError("log_level must be INFO or DEBUG")
 
     return AppConfig(
         db_path=resolve_under_script_dir(script_dir, raw.get("ebay_urls_dbfile"), "ebay_items.db", "Database path"),
@@ -287,6 +291,7 @@ def load_config(config_path: Path, script_dir: Path, *, validate_notifications: 
         telegram=telegram,
         log_to_console=as_bool(raw.get("log_to_console"), True),
         log_max_size_mb=parse_int(raw.get("log_max_size_mb"), "log_max_size_mb", 10, minimum=1),
+        log_level=log_level,
         api_concurrency=parse_int(raw.get("api_concurrency"), "api_concurrency", 8, minimum=1),
         exchange_rate_cache_ttl_hours=parse_int(
             raw.get("exchange_rate_cache_ttl_hours"),

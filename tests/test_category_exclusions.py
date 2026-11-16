@@ -73,7 +73,8 @@ def test_multiple_category_ids_and_logging(monkeypatch,caplog):
     client=EbayClient('fake',exclude_category_ids={'EBAY_GB':['131090','15032']})
     asyncio.run(client.run_queries(['EBAY_GB'],[SearchQuery('Bongo','Bongo')],{}))
     assert 'excludeCategoryIds:{131090|15032}' in session.calls[0]['params']['filter']
-    assert "Excluded categories for EBAY_GB: ['131090', '15032']" in caplog.text
+    assert "Search results: EBAY_GB" in caplog.text
+    assert "excluded_categories=['131090', '15032']" in caplog.text
 
 
 def test_cli_passes_categories_to_shared_client(monkeypatch,tmp_path):

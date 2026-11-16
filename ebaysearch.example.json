@@ -57,5 +57,6 @@
     "api_concurrency": 8,
     "exchange_rate_cache_ttl_hours": 24,
     "log_to_console": true,
+    "log_level": "INFO",
     "log_max_size_mb": 10
 }
