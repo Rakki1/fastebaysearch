@@ -38,6 +38,15 @@ class Database:
         finally:
             conn.close()
 
+    @contextmanager
+    def connect_readonly(self):
+        """Read existing history without creating a database or migrating its schema."""
+        conn = sqlite3.connect(self.db_path.resolve().as_uri() + "?mode=ro", uri=True)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
     def ensure_schema(self) -> None:
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE;")

@@ -75,7 +75,8 @@ class RuntimeBudget:
             self.store.record_run_cost(self.profile, run.browse_calls, now, **metrics)
 
     def summary(self, quota: BrowseQuota | None, now: float) -> str:
-        samples = self.store.run_cost_samples(self.profile, now)
+        # A quota report can be requested before a history database exists.
+        samples = self.store.run_cost_samples(self.profile, now) if self.store is not None else []
         costs = [sample["calls"] for sample in samples]
         heading = (f"Search budget: {self.queries_count} queries, {self.sites_count} marketplaces, "
                    f"at least {self.minimum_calls} search calls/run.")

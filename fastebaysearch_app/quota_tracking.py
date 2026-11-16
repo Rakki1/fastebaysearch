@@ -97,9 +97,15 @@ class QuotaStore:
 
     def run_cost_samples(self, profile, now):
         with self.connect() as conn:
-            return [dict(zip(("calls", "base_calls", "cache_entries", "refresh_calls", "cache_ttl_hours"), row))
+            # Read-only reports must also work before the first budget migration.
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(api_run_costs)")}
+            if not columns:
+                return []
+            fields = ("calls", "base_calls", "cache_entries", "refresh_calls", "cache_ttl_hours")
+            selection = "calls," + ",".join(field if field in columns else "NULL" for field in fields[1:])
+            return [dict(zip(fields, row))
                     for row in conn.execute(
-                        "SELECT calls,base_calls,cache_entries,refresh_calls,cache_ttl_hours FROM api_run_costs "
+                        f"SELECT {selection} FROM api_run_costs "
                         "WHERE app_key=? AND profile=? AND observed_at>=? ORDER BY id DESC LIMIT ?",
                         (self.key, profile, now - SAMPLE_MAX_AGE, SAMPLE_LIMIT))]
 

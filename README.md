@@ -189,7 +189,7 @@ Every partial or failed search run sends one summary per enabled channel even wi
 
 ## Run modes
 
-Listing searches and budget estimates validate the configuration, including credentials for enabled channels. Disable email/Telegram for a preview when you have not configured their credentials. Category and quota lookups need only eBay credentials, `ebay_sites`, and the optional token-cache path.
+Listing searches and offline budget estimates validate the configuration, including credentials for enabled channels. Disable email/Telegram for a preview when you have not configured their credentials. Category and quota lookups need only eBay credentials, `ebay_sites`, and the optional token-cache path. The quota command additionally reads the search settings and configured history database when available to report measured costs; notification credentials are not required.
 
 | Mode | API calls | SQLite | Output |
 | --- | --- | --- | --- |
@@ -197,7 +197,7 @@ Listing searches and budget estimates validate the configuration, including cred
 | `--clean-search` | eBay searches, OAuth as needed, live exchange rates | No access | Local HTML preview only; no email/Telegram or delivery queue |
 | `--estimate-api-budget` | None | No access | Console estimate only; no token cache, log file or notifications |
 | `--find-categories "keywords"` | Taxonomy lookups, OAuth as needed | No access | Category names, paths and a configuration example on the console; no listings, reports or notifications |
-| `--api-quota` | Developer Analytics, OAuth as needed | No access | Browse quota, usage, remaining calls and reset time on the console; no listings or notifications |
+| `--api-quota` | Developer Analytics, OAuth as needed | Reads existing cost samples only; no creation or migrations | Browse quota, usage, remaining calls, reset time, measured run cost and recommended interval; no listings or notifications |
 
 The four command-line modes cannot be combined.
 
@@ -385,13 +385,17 @@ The output shows estimated calls per run, possible runs per day and a recommende
 
 ### Live quota checks and Telegram warnings
 
-Read the actual application quota without searching for items:
+Read the actual application quota, measured search cost and recommended scheduling interval without searching for items:
 
 ```bash
 .venv/bin/python fastebaysearch.py ebaysearch.json --api-quota
 ```
 
-On Windows, use `.\.venv\Scripts\python.exe` in place of `.venv/bin/python`. The command returns `0` when quota is available, `2` when exhausted, and `1` when lookup fails. It does not use SQLite or send notifications. It may refresh the OAuth token cache. Reset times are shown in UTC and, if different, the machine's local time with its UTC offset.
+On Windows, use `.\.venv\Scripts\python.exe` in place of `.venv/bin/python`. The command returns `0` when quota is available, `2` when exhausted, and `1` when lookup fails. It reads existing SQLite run-cost samples in read-only mode without creating a database, migrating its schema, changing history or quota cooldowns, or sending notifications. It may refresh the OAuth token cache. Reset times are shown in UTC and, if different, the machine's local time with its UTC offset.
+
+The same command now shows the measured full-run cost, warm-cache cost and periodic description-refresh reserve when available, and a recommended number of complete runs per 24 hours and minimum interval using the live quota and configured safety margin. It uses the same current-configuration measurements and calculation as Telegram quota warnings described below. The recommendation describes sustainable operation across full quota windows; the remaining-call count applies to the current window until reset. It does not change cron.
+
+If the history database is missing, has no cost table yet, or has no recent complete measurements for the current application and search settings, the command says that the full-run cost has not been measured and does not guess an interval. It can read older cost tables without adding cache-budget columns. If search settings are missing/invalid or the existing database cannot be read, it still prints the live quota, explains why the measured budget is unavailable, and preserves the quota lookup's exit status. Email and Telegram settings are ignored for this report.
 
 Normal runs query the [Developer Analytics API](https://www.developer.ebay.com/develop/api/buy/developer_analytics_api) before Browse searches and again after a Browse HTTP 429. The `buy.browse` resource covers this program's search and single-item description calls. The separate `buy.browse.item.bulk` quota belongs to `getItems` and is not combined with it. Analytics checks have a separate API quota and do not consume `ebay_max_search_calls_per_run`.
 

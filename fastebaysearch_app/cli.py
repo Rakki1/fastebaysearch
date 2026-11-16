@@ -9,13 +9,15 @@ import time
 from pathlib import Path
 
 from .api_budget import estimate_api_budget, format_api_budget_estimate
-from .analytics import AnalyticsError
+from .analytics import AnalyticsError, BrowseQuota
 from .config import ConfigError, load_config, load_category_lookup_config
 from .database import Database
 from .ebay_client import EbayAuth, EbayClient
 from .logging_setup import setup_logging
 from .notifications.html_report import HtmlReportNotifier
 from .query_builder import build_queries
+from .quota_tracking import QuotaStore
+from .run_budget import RuntimeBudget
 from .taxonomy import TaxonomyClient, TaxonomyError, TaxonomyRateLimit, print_categories
 from .workflow import Workflow, WorkflowResult, dedupe_by_item_id, log_summary
 
@@ -31,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--find-categories", metavar="KEYWORDS",
                       help="Find category IDs and paths on configured eBay marketplaces")
     mode.add_argument("--api-quota", action="store_true",
-                      help="Read Browse quota and reset time from Developer Analytics; no listings or notifications")
+                      help="Read Browse quota, measured run cost and recommended interval; no listings or notifications")
     return parser
 
 
@@ -83,7 +85,24 @@ async def run_api_quota(config_path: Path, script_dir: Path) -> int:
         print(f"API quota lookup failed: {detail}", file=sys.stderr)
         return 1
     print(quota.summary())
+    _print_measured_api_budget(config_path, script_dir, quota)
     return 2 if quota.exhausted else 0
+
+
+def _print_measured_api_budget(config_path: Path, script_dir: Path, quota: BrowseQuota) -> None:
+    try:
+        config = load_config(config_path, script_dir, validate_notifications=False)
+        queries = build_queries(config)
+        store = None
+        if config.db_path.is_file():
+            database = Database(config.db_path)
+            store = QuotaStore(database.connect_readonly, config.ebay_client_id)
+        summary = RuntimeBudget(store, config, queries).summary(quota, time.time())
+    except (ConfigError, OSError, ValueError, sqlite3.Error) as exc:
+        detail = str(exc) if isinstance(exc, ConfigError) else type(exc).__name__
+        print(f"\nMeasured search budget unavailable: {detail}")
+        return
+    print("\n" + summary)
 
 
 def run_api_budget_estimate(config_path: Path, script_dir: Path) -> int:

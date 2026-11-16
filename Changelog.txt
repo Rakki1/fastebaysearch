@@ -1,5 +1,8 @@
 Unreleased
 
+- Extend --api-quota with measured full-run and warm-cache costs, description-refresh reserves and a scheduling recommendation based on the live quota, reusing the Telegram budget calculation.
+- Read existing run-cost history without creating or migrating SQLite databases or requiring notification credentials; report missing measurements explicitly while preserving quota-only lookup and exit codes.
+
 - Remove the separate Telegram search-report header and pending-item count; send listing notifications directly while retaining partial-search and quota warnings.
 
 - Show the local notification date and time after New listing! in Telegram, with English month names and ordinal days.

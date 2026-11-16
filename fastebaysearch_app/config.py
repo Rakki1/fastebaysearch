@@ -189,7 +189,8 @@ def resolve_under_cwd(configured_path: object, default_name: str, label: str) ->
     return resolved
 
 
-def load_config(config_path: Path, script_dir: Path) -> AppConfig:
+def load_config(config_path: Path, script_dir: Path, *, validate_notifications: bool = True) -> AppConfig:
+    """Load settings, optionally disabling notification setup for read-only budget reports."""
     config_path = config_path.resolve()
     script_dir = script_dir.resolve()
 
@@ -221,7 +222,7 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
     excluded_categories = parse_category_ids(raw.get("ebay_exclude_category_ids", {}), "ebay_exclude_category_ids")
     categories = parse_category_ids(raw.get("ebay_category_ids", {}), "ebay_category_ids")
 
-    use_email = as_bool(raw.get("use_email"), True)
+    use_email = validate_notifications and as_bool(raw.get("use_email"), True)
     email = None
     if use_email:
         email = EmailConfig(
@@ -238,7 +239,7 @@ def load_config(config_path: Path, script_dir: Path) -> AppConfig:
             max_per_run=parse_int(raw.get("email_max_per_run"), "email_max_per_run", 1000, minimum=1),
         )
 
-    use_telegram = as_bool(raw.get("use_telegram"), False)
+    use_telegram = validate_notifications and as_bool(raw.get("use_telegram"), False)
     telegram = None
     if use_telegram:
         send_mode = str(raw.get("telegram_send_mode") or "auto").strip().lower()

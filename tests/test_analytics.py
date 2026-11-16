@@ -107,6 +107,7 @@ def test_quota_command_uses_analytics_without_browse_db_or_notifications(tmp_pat
     from test_cli import minimal_config, write_config, FakeEbayAuth
     data = minimal_config()
     data["use_email"] = True  # Missing SMTP settings must not matter in the read-only quota mode.
+    data["use_telegram"] = True
     path = write_config(tmp_path, data)
     monkeypatch.setattr(cli, "EbayAuth", FakeEbayAuth)
 
@@ -120,7 +121,10 @@ def test_quota_command_uses_analytics_without_browse_db_or_notifications(tmp_pat
     monkeypatch.setattr(EbayClient, "run_queries", forbidden)
     monkeypatch.setattr(cli, "Database", forbidden)
     assert asyncio.run(cli.run_api_quota(path, tmp_path)) == expected
-    assert "limit=5000" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "limit=5000" in output
+    assert "has not been measured" in output
+    assert "Recommended:" not in output
     assert not (tmp_path / "items.db").exists()
 
 
