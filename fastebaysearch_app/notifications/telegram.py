@@ -48,7 +48,8 @@ class TelegramNotifier:
         self.sleep_seconds = sleep_seconds
 
     async def send_status(self, summary: str) -> bool:
-        return await self._send_text("<b>PARTIAL SEARCH</b>\n" + html.escape(summary[:1800]) + "\nSee log for details.")
+        return await self._send_text("<b>PARTIAL SEARCH</b>\n" + html.escape(summary[:1800])
+                                     + "\nSee fastebaysearch.log for details.")
 
     async def send_quota_status(self, summary: str) -> bool:
         return await self._send_text("<b>eBay API limit</b>\n" + html.escape(summary[:3500]))

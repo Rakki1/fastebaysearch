@@ -1,5 +1,7 @@
 Unreleased
 
+- Name fastebaysearch.log in Telegram partial-search messages so diagnostic details are easier to locate.
+
 - Keep scheduling estimates conservative when recent measurements mix complete cache-cost data with legacy or uncached samples.
 - Organize pagination and listing-change regressions by feature, share HTTP test doubles, remove a duplicate Telegram status test and an unused budget-store wrapper.
 
