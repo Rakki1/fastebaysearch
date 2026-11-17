@@ -23,7 +23,8 @@ def _format_notification_time(timestamp: datetime) -> str:
 
 
 def build_caption(result: SearchResult) -> str:
-    heading = "Updated listing" if result.event_id else f"New listing! {_format_notification_time(datetime.now())}"
+    heading = "Updated listing" if result.event_id else "New listing!"
+    heading += f" {_format_notification_time(datetime.now())}"
     name = html.escape(result.name)
     if result.event_id:
         name = "Updated listing: " + html.escape(result.change_description) + "\n" + name

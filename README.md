@@ -169,7 +169,7 @@ Email requires non-empty SMTP login/password and identity fields even when authe
 
 Telegram's `telegram_send_mode` accepts `auto` or `photo` (image when available, text fallback), `text`, or `photo_only` (skips items without images; no fallback). `telegram_disable_web_preview` controls text-link previews. Status warnings and fallback requests are additional to the item limit. Failed item deliveries become eligible again after six hours, up to three claimed attempts; exhausted items remain stored but are not automatically retried.
 
-New-listing Telegram notifications include their sending date and time in the server's local time after `New listing!`, for example `New listing! 15th November 2026, 14:45`. Month names are always English, with ordinal days such as `1st`, `2nd`, `3rd`, `11th`, `21st` and `31st`. Listing notifications are sent directly, without a separate search-report header or item-count message.
+Telegram listing notifications include their sending date and time in the server's local time after both `New listing!` and `Updated listing`, for example `Updated listing 17th November 2026, 14:45`. Month names are always English, with ordinal days such as `1st`, `2nd`, `3rd`, `11th`, `21st` and `31st`. Listing notifications are sent directly, without a separate search-report header or item-count message.
 
 ### Changed listings and status alerts
 
