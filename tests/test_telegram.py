@@ -1,10 +1,15 @@
 import asyncio
+from dataclasses import replace
+from datetime import datetime
+from unittest.mock import Mock
 
 import aiohttp
 import pytest
 
 from fastebaysearch_app.config import TelegramConfig
+from fastebaysearch_app.database import Database
 from fastebaysearch_app.models import SearchResult
+from fastebaysearch_app.notifications import telegram
 from fastebaysearch_app.notifications.telegram import TelegramNotifier
 
 SECRET_URL = "https://api.telegram.org/botTEST-SECRET/sendMessage"
@@ -105,3 +110,35 @@ def test_listing_is_sent_without_report_header(monkeypatch):
     assert "New listing! " in caption.splitlines()[0]
     assert "SEARCH REPORT" not in caption
     assert "items awaiting notification" not in caption
+
+
+@pytest.mark.parametrize("options,previous_options,heading", [
+    (("AUCTION",), None, "New auction!"),
+    (("FIXED_PRICE",), None, "New Buy it now!"),
+    (("FIXED_PRICE", "AUCTION"), None, "New auction!"),
+    (("AUCTION",), ("FIXED_PRICE",), "Updated auction"),
+    (("FIXED_PRICE",), ("AUCTION",), "Updated Buy it now"),
+])
+def test_telegram_heading_uses_buying_options_from_notification_queue(
+    tmp_path, monkeypatch, options, previous_options, heading
+):
+    db = Database(tmp_path / "items.db")
+    db.ensure_schema()
+    if previous_options is not None:
+        previous = replace(ITEM, buying_options=previous_options)
+        db.claim_new_results([previous])
+        db.mark_telegram_succeeded([previous])
+    db.claim_new_results([replace(ITEM, buying_options=options)])
+    pending = db.claim_pending_telegram_notifications(1)
+
+    session = Session([Response({"ok": True})])
+    monkeypatch.setattr(aiohttp, "ClientSession", lambda **kwargs: session)
+    monkeypatch.setattr(telegram, "datetime", Mock(now=Mock(return_value=datetime(2026, 11, 18, 14, 45))))
+    notifier = TelegramNotifier(TelegramConfig("token", "chat"), sleep_seconds=0)
+
+    assert len(pending) == 1
+    assert asyncio.run(notifier.send(pending)) == pending
+    caption = session.calls[0][1]["json"]["caption"]
+    assert caption.splitlines()[0] == f"⭐ <b>{heading} 18th November 2026, 14:45</b>"
+    if previous_options is not None:
+        assert f"{heading}: Buying options:" in caption

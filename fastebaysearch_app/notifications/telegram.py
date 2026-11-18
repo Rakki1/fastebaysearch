@@ -23,17 +23,22 @@ def _format_notification_time(timestamp: datetime) -> str:
 
 
 def build_caption(result: SearchResult) -> str:
-    heading = "Updated listing" if result.event_id else "New listing!"
-    heading += f" {_format_notification_time(datetime.now())}"
+    listing_type = "listing"
+    if "AUCTION" in result.buying_options:
+        listing_type = "auction"
+    elif "FIXED_PRICE" in result.buying_options:
+        listing_type = "Buy it now"
+    heading = f"Updated {listing_type}" if result.event_id else f"New {listing_type}!"
+    timestamp = _format_notification_time(datetime.now())
     name = html.escape(result.name)
     if result.event_id:
-        name = "Updated listing: " + html.escape(result.change_description) + "\n" + name
+        name = f"{heading}: {html.escape(result.change_description)}\n{name}"
     price = html.escape(result.price)
     keywords = html.escape(result.keywords)
     link = html.escape(safe_url(result.link), quote=True)
     location = f"Location: {html.escape(result.location_country)}\n" if result.location_country else ""
     return (
-        f"⭐ <b>{heading}</b>\n"
+        f"⭐ <b>{heading} {timestamp}</b>\n"
         f"📦 {name}\n"
         f"💰 {price}\n"
         f"🔍 <i>Search: {keywords}</i>\n"

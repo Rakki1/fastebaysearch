@@ -1,5 +1,7 @@
 Unreleased
 
+- Label new and updated Telegram listings as auctions or Buy It Now based on the listing's buying options.
+
 - Include the same local notification date and time in Updated listing Telegram headings as in New listing! headings.
 
 - Default logs to concise INFO output with marketplace summaries; retain complete search errors, validation/cache totals, quota/call usage and final result counts, with per-query and rejected-item details available through log_level=DEBUG.

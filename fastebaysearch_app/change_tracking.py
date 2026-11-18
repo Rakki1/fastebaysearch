@@ -49,8 +49,15 @@ def observe(cur, results, new_ids, html_enabled):
 def pending(conn, channel, originals, limit, claim=False, retry_after_hours=6, max_attempts=3):
     candidates = []
     for item in originals:
-        row = conn.execute("SELECT insert_time FROM ebayids WHERE item_id=?",(item.item_id,)).fetchone()
-        candidates.append((row[0], 0, item))
+        inserted, snapshot = conn.execute("""
+            SELECT e.insert_time, o.snapshot FROM ebayids e
+            LEFT JOIN item_observations o ON o.item_id = e.item_id AND ? = 'telegram'
+            WHERE e.item_id = ?
+        """, (channel, item.item_id)).fetchone()
+        if snapshot is not None:
+            data = json.loads(snapshot)
+            item = replace(item, buying_options=tuple(data.get("buying_options") or ()))
+        candidates.append((inserted, 0, item))
     rows = conn.execute("""SELECT e.id,e.created_at,e.snapshot FROM change_events e JOIN change_deliveries d ON e.id=d.event_id
         WHERE d.channel=? AND d.delivered_at IS NULL
         AND (d.channel != 'telegram' OR (d.attempts < ? AND (d.attempted_at IS NULL OR d.attempted_at <= datetime('now',?))))
