@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# fastebaysearch 0.6.0 9th May 2026
+# fastebaysearch 0.7
 # Forked and rewritten from the original ebaysearch v0.4.0 by Kalevi Kolttonen <kalevi@kolttonen.fi>
 # (c) 2025-2026 Aki Sivula <aki.sivula@gmail.com>
 # License: GPLv2
